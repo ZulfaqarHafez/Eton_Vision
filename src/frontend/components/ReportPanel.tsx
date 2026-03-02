@@ -57,7 +57,7 @@ export function ReportPanel({
               No report yet
             </p>
             <p className="text-sm text-muted-foreground max-w-[280px] leading-relaxed">
-              Upload an image, fill in the child's name and activity context, then generate a report.
+              Upload an image — faces will be detected automatically. Add context, then generate a report.
             </p>
           </div>
         )}

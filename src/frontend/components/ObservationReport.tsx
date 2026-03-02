@@ -56,7 +56,7 @@ export function ObservationReport({ report, isStreaming, childName }: Observatio
           {new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "long", year: "numeric" })}
         </span>
         {childName && (
-          <> · Child: <span className="font-semibold text-foreground">{childName}</span></>
+          <> · {childName.includes(',') ? 'Children' : 'Child'}: <span className="font-semibold text-foreground">{childName}</span></>
         )}
       </div>
 
