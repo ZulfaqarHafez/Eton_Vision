@@ -15,7 +15,7 @@ export function Header() {
             <BookOpen className="w-4 h-4 text-white" />
           </div>
           <span className="text-lg font-bold tracking-tight text-foreground">
-            Eton<span className="text-primary">Report</span>
+            Eton<span className="text-primary">Vision</span>
           </span>
         </div>
       </div>

@@ -1,4 +1,4 @@
-# KinderReport
+# Eton Vision
 
 AI-Powered Observation Reports for Educators. Create professional kindergarten observation reports with AI — upload photos of children's activities and generate insightful developmental assessments instantly.
 
