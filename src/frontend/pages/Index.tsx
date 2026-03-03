@@ -109,7 +109,7 @@ const Index = () => {
                 animate={{ opacity: 1 }}
                 className="w-full md:w-2/5 md:min-w-[320px] h-auto md:h-full p-4 md:p-6 flex flex-col gap-5 md:border-r border-border overflow-y-auto"
               >
-                {/* Image Section */}
+                {/* Image Section + Face Tagging */}
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -124,27 +124,16 @@ const Index = () => {
                       </button>
                     )}
                   </div>
-                  <div className="min-h-0">
-                    {selectedImage ? (
-                      <div className="panel-card overflow-hidden rounded-xl">
-                        <img
-                          src={selectedImage}
-                          alt="Uploaded preview"
-                          className="w-full object-cover"
-                          style={{ maxHeight: 280 }}
-                        />
-                      </div>
-                    ) : (
-                      <ImageUpload
-                        onImageSelect={handleImageSelect}
-                        selectedImage={selectedImage}
-                        onClear={handleClearImage}
-                      />
-                    )}
-                  </div>
+                  {!selectedImage && (
+                    <ImageUpload
+                      onImageSelect={handleImageSelect}
+                      selectedImage={selectedImage}
+                      onClear={handleClearImage}
+                    />
+                  )}
                 </div>
 
-                {/* Face Tag Panel — replaces manual child name input */}
+                {/* Face Tag Panel — shows image with bounding boxes + tagged students */}
                 <FaceTagPanel
                   imageFile={imageFile}
                   imagePreview={selectedImage}
