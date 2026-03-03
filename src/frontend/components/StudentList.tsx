@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { UserPlus, Loader2, Trash2, Users, Database } from 'lucide-react';
+import { UserPlus, Loader2, Trash2, Users, Database, Upload, Camera } from 'lucide-react';
 import { Button } from '@/frontend/components/ui/button';
 import { Avatar, AvatarImage, AvatarFallback } from '@/frontend/components/ui/avatar';
 import {
@@ -22,7 +22,9 @@ import {
 } from '@/frontend/components/ui/alert-dialog';
 import { Badge } from '@/frontend/components/ui/badge';
 import { supabase, type Child, type FaceSignature } from '@/frontend/lib/supabase';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/frontend/components/ui/tabs';
 import { StudentEnrolment } from './StudentEnrolment';
+import { LiveScanEnrolment } from './LiveScanEnrolment';
 import { toast } from 'sonner';
 
 export function StudentList() {
@@ -134,16 +136,38 @@ export function StudentList() {
               Enrol Student
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-md">
+          <DialogContent className="sm:max-w-lg">
             <DialogHeader>
               <DialogTitle>Enrol New Student</DialogTitle>
             </DialogHeader>
-            <StudentEnrolment
-              onSuccess={() => {
-                setEnrolDialogOpen(false);
-                fetchStudents();
-              }}
-            />
+            <Tabs defaultValue="upload" className="w-full">
+              <TabsList className="w-full">
+                <TabsTrigger value="upload" className="flex-1 gap-1.5 text-xs">
+                  <Upload className="w-3.5 h-3.5" />
+                  Upload Photo
+                </TabsTrigger>
+                <TabsTrigger value="livescan" className="flex-1 gap-1.5 text-xs">
+                  <Camera className="w-3.5 h-3.5" />
+                  Live 3D Scan
+                </TabsTrigger>
+              </TabsList>
+              <TabsContent value="upload" className="mt-4">
+                <StudentEnrolment
+                  onSuccess={() => {
+                    setEnrolDialogOpen(false);
+                    fetchStudents();
+                  }}
+                />
+              </TabsContent>
+              <TabsContent value="livescan" className="mt-4">
+                <LiveScanEnrolment
+                  onSuccess={() => {
+                    setEnrolDialogOpen(false);
+                    fetchStudents();
+                  }}
+                />
+              </TabsContent>
+            </Tabs>
           </DialogContent>
         </Dialog>
       </div>
