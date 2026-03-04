@@ -320,7 +320,7 @@ export function FaceTagPanel({ imageFile, imagePreview, onTagsChange }: FaceTagP
           const thumbnail = getFaceCanvas(imgRef.current, pendingTag.box);
           setTaggedChildren((prev) => [
             ...prev,
-            { id: selectedChildId, name: selectedChild.name, confidence: 1.0, thumbnail },
+            { id: selectedChildId, name: selectedChild.name, class_group: selectedChild.class_group || '', confidence: 1.0, thumbnail },
           ]);
         }
 
@@ -379,7 +379,8 @@ export function FaceTagPanel({ imageFile, imagePreview, onTagsChange }: FaceTagP
           usedChildIds.add(override.child_id);
           const match = { child_id: override.child_id, name: override.name, similarity: 1.0 };
           results.push({ box, descriptor: embedding, match, thumbnail });
-          tags.push({ id: override.child_id, name: override.name, confidence: 1.0, thumbnail });
+          const overrideChild = allChildren.find((c) => c.id === override.child_id);
+          tags.push({ id: override.child_id, name: override.name, class_group: overrideChild?.class_group || '', confidence: 1.0, thumbnail });
           continue;
         }
 
@@ -388,7 +389,8 @@ export function FaceTagPanel({ imageFile, imagePreview, onTagsChange }: FaceTagP
         if (match && !usedChildIds.has(match.child_id)) {
           usedChildIds.add(match.child_id);
           results.push({ box, descriptor: embedding, match, thumbnail });
-          tags.push({ id: match.child_id, name: match.name, confidence: match.similarity, thumbnail });
+          const matchedChild = allChildren.find((c) => c.id === match.child_id);
+          tags.push({ id: match.child_id, name: match.name, class_group: matchedChild?.class_group || '', confidence: match.similarity, thumbnail });
         } else {
           results.push({ box, descriptor: embedding, match: null, thumbnail });
         }
@@ -416,7 +418,7 @@ export function FaceTagPanel({ imageFile, imagePreview, onTagsChange }: FaceTagP
     if (taggedChildren.some((t) => t.id === childId)) return;
     const child = allChildren.find((c) => c.id === childId);
     if (!child) return;
-    setTaggedChildren((prev) => [...prev, { id: child.id, name: child.name, confidence: 1.0 }]);
+    setTaggedChildren((prev) => [...prev, { id: child.id, name: child.name, class_group: child.class_group || '', confidence: 1.0 }]);
     setShowAddManual(false);
   };
 

@@ -12,86 +12,86 @@
 
 @layer base {
   :root {
-    /* Kindergarten-friendly: Warm, playful, nurturing palette */
-    --background: 40 40% 98%;
-    --foreground: 25 30% 22%;
+    /* EtonHouse brand palette — red primary, teal accent, neutral base */
+    --background: 0 0% 98%;
+    --foreground: 0 0% 18%;
 
     --card: 0 0% 100%;
-    --card-foreground: 25 30% 22%;
+    --card-foreground: 0 0% 18%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 25 30% 22%;
+    --popover-foreground: 0 0% 18%;
 
-    /* Warm coral/peach primary - friendly and inviting */
-    --primary: 15 85% 60%;
+    /* EtonHouse red — from the logo */
+    --primary: 355 75% 47%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 40 30% 94%;
-    --secondary-foreground: 25 30% 30%;
+    --secondary: 180 8% 94%;
+    --secondary-foreground: 0 0% 25%;
 
-    --muted: 40 20% 92%;
-    --muted-foreground: 25 15% 50%;
+    --muted: 0 0% 93%;
+    --muted-foreground: 0 0% 45%;
 
-    /* Soft teal accent for balance */
-    --accent: 168 45% 50%;
+    /* Teal/cyan accent — from the brand imagery */
+    --accent: 175 70% 42%;
     --accent-foreground: 0 0% 100%;
 
     --destructive: 0 65% 55%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 35 20% 88%;
-    --input: 35 20% 88%;
-    --ring: 15 85% 60%;
+    --border: 0 0% 89%;
+    --input: 0 0% 89%;
+    --ring: 355 75% 47%;
 
     --radius: 0.75rem;
 
     --sidebar-background: 0 0% 100%;
-    --sidebar-foreground: 25 30% 22%;
-    --sidebar-primary: 15 85% 60%;
+    --sidebar-foreground: 0 0% 18%;
+    --sidebar-primary: 355 75% 47%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 40 30% 94%;
-    --sidebar-accent-foreground: 25 30% 30%;
-    --sidebar-border: 35 20% 88%;
-    --sidebar-ring: 15 85% 60%;
+    --sidebar-accent: 180 8% 94%;
+    --sidebar-accent-foreground: 0 0% 25%;
+    --sidebar-border: 0 0% 89%;
+    --sidebar-ring: 355 75% 47%;
 
-    /* Playful, warm effects */
-    --gradient-primary: linear-gradient(135deg, hsl(15 85% 60%), hsl(25 90% 65%));
-    --gradient-surface: linear-gradient(180deg, hsl(40 40% 98%), hsl(35 35% 96%));
-    --gradient-card: linear-gradient(145deg, hsl(0 0% 100%), hsl(40 35% 98%));
-    --gradient-card-hover: linear-gradient(145deg, hsl(0 0% 100%), hsl(15 40% 97%));
-    --shadow-soft: 0 2px 8px hsl(25 30% 22% / 0.06);
-    --shadow-card: 0 4px 20px hsl(15 85% 60% / 0.08), 0 2px 6px hsl(25 30% 22% / 0.04);
-    --shadow-card-hover: 0 8px 30px hsl(15 85% 60% / 0.15), 0 4px 12px hsl(25 30% 22% / 0.06);
-    --shadow-glow: 0 0 24px hsl(15 85% 60% / 0.2);
+    /* Brand-aligned effects */
+    --gradient-primary: linear-gradient(135deg, hsl(355 75% 47%), hsl(355 70% 55%));
+    --gradient-surface: linear-gradient(180deg, hsl(0 0% 98%), hsl(0 0% 96%));
+    --gradient-card: linear-gradient(145deg, hsl(0 0% 100%), hsl(180 5% 98%));
+    --gradient-card-hover: linear-gradient(145deg, hsl(0 0% 100%), hsl(355 15% 97%));
+    --shadow-soft: 0 2px 8px hsl(0 0% 18% / 0.06);
+    --shadow-card: 0 4px 20px hsl(355 75% 47% / 0.06), 0 2px 6px hsl(0 0% 18% / 0.04);
+    --shadow-card-hover: 0 8px 30px hsl(355 75% 47% / 0.12), 0 4px 12px hsl(0 0% 18% / 0.06);
+    --shadow-glow: 0 0 24px hsl(355 75% 47% / 0.18);
   }
 
   .dark {
-    /* Dark mode with warm undertones */
-    --background: 25 20% 12%;
-    --foreground: 40 30% 92%;
-    --card: 25 18% 16%;
-    --card-foreground: 40 30% 92%;
-    --popover: 25 18% 16%;
-    --popover-foreground: 40 30% 92%;
-    --primary: 15 80% 65%;
-    --primary-foreground: 25 20% 12%;
-    --secondary: 25 15% 20%;
-    --secondary-foreground: 40 25% 85%;
-    --muted: 25 12% 22%;
-    --muted-foreground: 40 15% 55%;
-    --accent: 168 50% 55%;
-    --accent-foreground: 25 20% 12%;
+    /* Dark mode — EtonHouse brand tones */
+    --background: 200 10% 11%;
+    --foreground: 0 0% 92%;
+    --card: 200 8% 15%;
+    --card-foreground: 0 0% 92%;
+    --popover: 200 8% 15%;
+    --popover-foreground: 0 0% 92%;
+    --primary: 355 70% 58%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 200 8% 20%;
+    --secondary-foreground: 0 0% 85%;
+    --muted: 200 6% 22%;
+    --muted-foreground: 0 0% 55%;
+    --accent: 175 65% 50%;
+    --accent-foreground: 200 10% 11%;
     --destructive: 0 65% 55%;
     --destructive-foreground: 0 0% 100%;
-    --border: 25 15% 25%;
-    --input: 25 15% 25%;
-    --ring: 15 80% 65%;
+    --border: 200 8% 25%;
+    --input: 200 8% 25%;
+    --ring: 355 70% 58%;
 
-    --gradient-card: linear-gradient(145deg, hsl(25 18% 18%), hsl(25 18% 14%));
-    --gradient-card-hover: linear-gradient(145deg, hsl(25 18% 20%), hsl(25 18% 16%));
+    --gradient-card: linear-gradient(145deg, hsl(200 8% 17%), hsl(200 8% 13%));
+    --gradient-card-hover: linear-gradient(145deg, hsl(200 8% 19%), hsl(200 8% 15%));
     --shadow-card: 0 4px 20px hsl(0 0% 0% / 0.3), 0 2px 6px hsl(0 0% 0% / 0.2);
-    --shadow-card-hover: 0 8px 30px hsl(15 80% 65% / 0.15), 0 4px 12px hsl(0 0% 0% / 0.3);
-    --shadow-glow: 0 0 28px hsl(15 80% 65% / 0.25);
+    --shadow-card-hover: 0 8px 30px hsl(355 70% 58% / 0.15), 0 4px 12px hsl(0 0% 0% / 0.3);
+    --shadow-glow: 0 0 28px hsl(355 70% 58% / 0.25);
   }
 }
 
@@ -228,6 +228,7 @@
   .btn-primary {
     @apply bg-primary text-primary-foreground rounded-xl font-medium transition-all duration-200;
     box-shadow: 0 2px 8px hsl(var(--primary) / 0.3);
+    min-height: 48px;
   }
 
   .btn-primary:hover {
@@ -242,6 +243,11 @@
   .observation-narrative {
     font-style: italic;
     line-height: 1.8;
+  }
+
+  /* Safe area for mobile bottom nav */
+  .safe-area-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
   }
 }
 

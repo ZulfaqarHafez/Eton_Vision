@@ -3,6 +3,7 @@ import { Loader2, FileText, AlertTriangle, RefreshCw } from "lucide-react";
 import { ObservationReport } from "./ObservationReport";
 import { parseReport } from "@/frontend/lib/parseReport";
 import type { ReportStatus } from "@/frontend/pages/Index";
+import type { TaggedChild } from "@/frontend/lib/supabase";
 
 interface ReportPanelProps {
   reportText: string;
@@ -11,6 +12,9 @@ interface ReportPanelProps {
   onRetry: () => void;
   childName: string;
   isStreaming: boolean;
+  taggedChildren?: TaggedChild[];
+  imagePreview?: string | null;
+  imageFile?: File | null;
 }
 
 export function ReportPanel({
@@ -20,6 +24,9 @@ export function ReportPanel({
   onRetry,
   childName,
   isStreaming,
+  taggedChildren,
+  imagePreview,
+  imageFile,
 }: ReportPanelProps) {
   const parsedReport = reportText ? parseReport(reportText) : null;
   const showReport = (status === 'loading' && reportText.length > 0) || status === 'done';
@@ -34,7 +41,7 @@ export function ReportPanel({
           </div>
           <div>
             <h2 className="text-sm font-bold text-foreground">Observation Report</h2>
-            <p className="text-[11px] text-muted-foreground">Developmental insights</p>
+            <p className="text-[11px] text-muted-foreground">Moments — Developmental insights</p>
           </div>
         </div>
         {status === 'loading' && (
@@ -46,10 +53,10 @@ export function ReportPanel({
       </div>
 
       {/* Content Area */}
-      <div className="flex-1 overflow-y-auto p-5 min-h-0">
+      <div className="flex-1 overflow-y-auto min-h-0">
         {/* Idle State */}
         {status === 'idle' && (
-          <div className="flex flex-col items-center justify-center h-full text-center py-8 gap-3">
+          <div className="flex flex-col items-center justify-center h-full text-center py-8 gap-3 px-5">
             <div className="w-14 h-14 rounded-2xl bg-secondary flex items-center justify-center">
               <FileText className="w-7 h-7 text-muted-foreground/40" />
             </div>
@@ -64,7 +71,7 @@ export function ReportPanel({
 
         {/* Loading State (no text yet) */}
         {status === 'loading' && reportText.length === 0 && (
-          <div className="flex flex-col items-center justify-center h-full text-center py-8 gap-5">
+          <div className="flex flex-col items-center justify-center h-full text-center py-8 gap-5 px-5">
             <motion.div
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
@@ -83,7 +90,7 @@ export function ReportPanel({
 
         {/* Error State */}
         {status === 'error' && error && (
-          <div className="flex flex-col items-center justify-center h-full text-center py-8 gap-3">
+          <div className="flex flex-col items-center justify-center h-full text-center py-8 gap-3 px-5">
             <div className="w-14 h-14 rounded-2xl bg-destructive/10 flex items-center justify-center">
               <AlertTriangle className="w-7 h-7 text-destructive" />
             </div>
@@ -112,6 +119,9 @@ export function ReportPanel({
             report={parsedReport}
             isStreaming={isStreaming}
             childName={childName}
+            taggedChildren={taggedChildren}
+            imagePreview={imagePreview}
+            imageFile={imageFile}
           />
         )}
       </div>
