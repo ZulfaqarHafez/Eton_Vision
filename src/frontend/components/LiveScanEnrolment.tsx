@@ -25,14 +25,14 @@ interface LiveScanEnrolmentProps {
 const THRESHOLDS = {
   FRONT: { min: 2.2, max: 2.6 },
   LEFT: 1.2,
-  RIGHT: 15.8,
+  RIGHT: 12.8,
 };
 
 const STEP_LABELS: Record<ScanState, string> = {
   IDLE: '',
   FRONT: 'Look straight at the camera',
-  LEFT: 'Turn your head slightly to the left',
-  RIGHT: 'Turn your head slightly to the right',
+  LEFT: 'Turn your head slightly to the right',
+  RIGHT: 'Turn your head slightly to the left',
   DONE: 'All angles captured!',
 };
 
