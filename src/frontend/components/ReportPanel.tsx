@@ -1,7 +1,7 @@
 import { motion } from "framer-motion";
 import { Loader2, FileText, AlertTriangle, RefreshCw } from "lucide-react";
 import { ObservationReport } from "./ObservationReport";
-import { parseReport } from "@/frontend/lib/parseReport";
+import { parseReport, type ParsedReport } from "@/frontend/lib/parseReport";
 import type { ReportStatus } from "@/frontend/pages/Index";
 import type { TaggedChild } from "@/frontend/lib/supabase";
 
@@ -15,6 +15,7 @@ interface ReportPanelProps {
   taggedChildren?: TaggedChild[];
   imagePreview?: string | null;
   imageFile?: File | null;
+  onReportEdit?: (updated: ParsedReport) => void;
 }
 
 export function ReportPanel({
@@ -27,6 +28,7 @@ export function ReportPanel({
   taggedChildren,
   imagePreview,
   imageFile,
+  onReportEdit,
 }: ReportPanelProps) {
   const parsedReport = reportText ? parseReport(reportText) : null;
   const showReport = (status === 'loading' && reportText.length > 0) || status === 'done';
@@ -115,14 +117,19 @@ export function ReportPanel({
 
         {/* Report View */}
         {showReport && parsedReport && (
-          <ObservationReport
-            report={parsedReport}
-            isStreaming={isStreaming}
-            childName={childName}
-            taggedChildren={taggedChildren}
-            imagePreview={imagePreview}
-            imageFile={imageFile}
-          />
+          <>
+            <ObservationReport
+              report={parsedReport}
+              isStreaming={isStreaming}
+              childName={childName}
+              taggedChildren={taggedChildren}
+              imagePreview={imagePreview}
+              imageFile={imageFile}
+              onReportEdit={onReportEdit}
+            />
+
+
+          </>
         )}
       </div>
     </div>

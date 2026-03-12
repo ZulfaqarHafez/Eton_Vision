@@ -36,11 +36,11 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
         baseUrl: import.meta.env.VITE_COLAB_URL || 'https://8000-gpu-t4-s-ts859nfedjae-c.us-east1-0.prod.colab.dev',
         model: 'qwen2-vl',
       },
-      // openai: {
-      //   baseUrl: 'https://api.openai.com/v1',
-      //   model: 'gpt-4o',
-      //   apiKey: import.meta.env.VITE_OPENAI_API_KEY || '',
-      // },
+      openai: {
+        baseUrl: 'https://api.openai.com/v1',
+        model: 'gpt-4o',
+        apiKey: import.meta.env.VITE_OPENAI_API_KEY || '',
+      },
       huggingface: {
         baseUrl: 'https://api-inference.huggingface.co/models',
         model: 'Salesforce/blip-image-captioning-large',
@@ -69,13 +69,13 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
       setupUrl: '#',
       requiresKey: false,
     },
-    // openai: {
-    //   name: 'OpenAI GPT-4 Vision',
-    //   description: 'Best quality. Uses GPT-4o with vision capabilities. API key loaded from .env file.',
-    //   setupUrl: 'https://platform.openai.com/api-keys',
-    //   requiresKey: true,
-    //   usesEnvKey: true,
-    // },
+    openai: {
+      name: 'OpenAI GPT-4 Vision',
+      description: 'Best quality. Uses GPT-4o with vision capabilities. API key loaded from .env file.',
+      setupUrl: 'https://platform.openai.com/api-keys',
+      requiresKey: true,
+      usesEnvKey: true,
+    },
     huggingface: {
       name: 'Hugging Face',
       description: 'Cloud-based, free tier available. Uses BLIP for image captioning + Mistral for text generation.',
@@ -194,6 +194,13 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                     <p className="text-xs text-green-600 flex items-center gap-1">
                       <Check className="w-3 h-3" />
                       No API key needed — using Colab tunnel
+                    </p>
+                  </div>
+                ) : config.provider === 'openai' && import.meta.env.VITE_OPENAI_API_KEY ? (
+                  <div className="p-3 rounded-lg bg-green-500/10 border border-green-500/20">
+                    <p className="text-xs text-green-600 flex items-center gap-1">
+                      <Check className="w-3 h-3" />
+                      API key loaded from .env file
                     </p>
                   </div>
                 ) : (

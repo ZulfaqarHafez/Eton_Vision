@@ -8,7 +8,8 @@ import { ReportPanel } from "@/frontend/components/ReportPanel";
 import { SettingsPanel } from "@/frontend/components/SettingsPanel";
 import { FaceTagPanel } from "@/frontend/components/FaceTagPanel";
 import { StudentList } from "@/frontend/components/StudentList";
-import { analyzeImage } from "@/backend/services/vlm";
+import { analyzeImage, refineReport } from "@/backend/services/vlm";
+import { parseReport, type ParsedReport } from "@/frontend/lib/parseReport";
 import type { TaggedChild } from "@/frontend/lib/supabase";
 
 export type ReportStatus = 'idle' | 'loading' | 'error' | 'done';
@@ -25,6 +26,8 @@ const Index = () => {
   const [reportStatus, setReportStatus] = useState<ReportStatus>('idle');
   const [reportError, setReportError] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isRefining, setIsRefining] = useState(false);
+  const [refinePrompt, setRefinePrompt] = useState("");
 
   const childNames = taggedChildren.map((c) => c.name).join(', ');
 
@@ -49,6 +52,11 @@ const Index = () => {
   const handleGenerate = useCallback(async () => {
     if (!selectedImage || !imageFile || taggedChildren.length === 0) return;
 
+    console.log('[Generate] Starting report generation...');
+    console.log('[Generate] Provider:', (() => { try { const c = JSON.parse(localStorage.getItem('vlm_config') || '{}'); return c.provider || 'colab'; } catch { return 'colab'; } })());
+    console.log('[Generate] Child names:', childNames);
+    console.log('[Generate] Context:', context.trim() || 'Classroom activity');
+
     setReportText('');
     setReportError(null);
     setReportStatus('loading');
@@ -57,15 +65,58 @@ const Index = () => {
       await analyzeImage(imageFile, childNames, context.trim() || "Classroom activity", (chunk) => {
         setReportText((prev) => prev + chunk);
       });
+      console.log('[Generate] Done.');
       setReportStatus('done');
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      console.error('[Generate] Error:', errorMsg);
       setReportError(errorMsg);
       setReportStatus('error');
     }
   }, [selectedImage, imageFile, taggedChildren, childNames, context]);
 
   const isLoading = reportStatus === 'loading';
+
+  const handleFollowUp = useCallback(async () => {
+    if (!reportText || isRefining || !refinePrompt.trim()) return;
+
+    console.log('[Refine] Starting refinement with prompt:', refinePrompt);
+
+    // Save current report before clearing so we can send it to the API
+    const currentReport = reportText;
+
+    setIsRefining(true);
+    setReportError(null);
+    // Clear report text so the user sees streaming result
+    setReportText('');
+    setReportStatus('loading');
+
+    try {
+      await refineReport(
+        currentReport,
+        refinePrompt,
+        childNames,
+        imageFile,
+        (chunk) => {
+          setReportText((prev) => prev + chunk);
+        }
+      );
+      console.log('[Refine] Done.');
+      setReportStatus('done');
+      setRefinePrompt('');
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      console.error('[Refine] Error:', errorMsg);
+      setReportError(errorMsg);
+      setReportStatus('error');
+    } finally {
+      setIsRefining(false);
+    }
+  }, [reportText, isRefining, refinePrompt, childNames, imageFile]);
+
+  const handleReportEdit = useCallback((updated: ParsedReport) => {
+    setReportText(updated.raw);
+  }, []);
 
   return (
     <div className="min-h-screen bg-background">
@@ -113,7 +164,7 @@ const Index = () => {
                 onTagsChange={setTaggedChildren}
               />
 
-              {/* Activity Context */}
+              {/* Activity Context — always visible */}
               <div>
                 <label className="text-sm font-semibold text-foreground/70 mb-1.5 block">
                   Activity Context
@@ -122,27 +173,71 @@ const Index = () => {
                   value={context}
                   onChange={(e) => setContext(e.target.value)}
                   placeholder="Describe the ongoing project or context. e.g. Over several days, children have been working with clay to create sea turtles..."
-                  disabled={isLoading}
+                  disabled={isLoading || isRefining}
                   rows={3}
                   className="chat-input w-full resize-none text-base"
                 />
               </div>
 
-              {/* Generate Button */}
-              <button
-                onClick={handleGenerate}
-                disabled={!selectedImage || taggedChildren.length === 0 || isLoading}
-                className="btn-primary w-full flex items-center justify-center gap-2 py-3.5 rounded-xl text-base font-semibold disabled:opacity-40 disabled:cursor-not-allowed disabled:transform-none mt-auto"
-              >
-                {isLoading ? (
-                  <>
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                    Generating...
-                  </>
-                ) : (
-                  "Generate Report"
+              {/* Refine Report — shown after report is done */}
+              {reportStatus === 'done' && (
+                <div>
+                  <label className="text-sm font-semibold text-foreground/70 mb-1.5 block">
+                    Refine Report
+                  </label>
+                  <textarea
+                    value={refinePrompt}
+                    onChange={(e) => setRefinePrompt(e.target.value)}
+                    placeholder="e.g. Make the observation more detailed, add more about collaboration..."
+                    disabled={isRefining}
+                    rows={2}
+                    className="chat-input w-full resize-none text-base"
+                  />
+                  {reportError && (
+                    <p className="text-xs text-destructive mt-1.5 px-1">{reportError}</p>
+                  )}
+                </div>
+              )}
+
+              {/* Buttons */}
+              <div className="flex flex-col gap-2 mt-auto">
+                {reportStatus === 'done' && (
+                  <button
+                    onClick={handleFollowUp}
+                    disabled={!refinePrompt.trim() || isRefining}
+                    className="btn-primary w-full flex items-center justify-center gap-2 py-3.5 rounded-xl text-base font-semibold disabled:opacity-40 disabled:cursor-not-allowed disabled:transform-none"
+                  >
+                    {isRefining ? (
+                      <>
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                        Refining...
+                      </>
+                    ) : (
+                      "Refine Report"
+                    )}
+                  </button>
                 )}
-              </button>
+                <button
+                  onClick={handleGenerate}
+                  disabled={!selectedImage || taggedChildren.length === 0 || isLoading}
+                  className={`w-full flex items-center justify-center gap-2 py-3.5 rounded-xl text-base font-semibold disabled:opacity-40 disabled:cursor-not-allowed disabled:transform-none ${
+                    reportStatus === 'done'
+                      ? 'border border-border bg-secondary text-foreground hover:bg-secondary/80 transition-colors'
+                      : 'btn-primary'
+                  }`}
+                >
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      Generating...
+                    </>
+                  ) : reportStatus === 'done' ? (
+                    "Re-generate Report"
+                  ) : (
+                    "Generate Report"
+                  )}
+                </button>
+              </div>
             </motion.div>
 
             {/* Right Panel — Report */}
@@ -162,6 +257,7 @@ const Index = () => {
                 taggedChildren={taggedChildren}
                 imagePreview={selectedImage}
                 imageFile={imageFile}
+                onReportEdit={handleReportEdit}
               />
             </motion.div>
           </div>
