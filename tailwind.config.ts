@@ -15,6 +15,7 @@ export default {
     extend: {
       fontFamily: {
         sans: ["Nunito", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "sans-serif"],
+        display: ["Baloo 2", "Nunito", "sans-serif"],
       },
       colors: {
         border: "hsl(var(--border))",

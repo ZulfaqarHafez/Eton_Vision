@@ -1,97 +1,104 @@
-@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800;900&family=Baloo+2:wght@500;600;700;800&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 /*
-  Design System for EtonReport
-  Warm, kindergarten-friendly theme
-  All colors MUST be HSL.
+  Eton Vision — Warm, kid-friendly, professional reporting theme
+  Inspired by everychild.sg / early childhood education aesthetics
 */
 
 @layer base {
   :root {
-    /* EtonHouse brand palette — red primary, teal accent, neutral base */
-    --background: 0 0% 98%;
-    --foreground: 0 0% 18%;
+    /* Warm cream base with coral + sage palette */
+    --background: 38 50% 97%;
+    --foreground: 25 30% 18%;
 
-    --card: 0 0% 100%;
-    --card-foreground: 0 0% 18%;
+    --card: 40 40% 99%;
+    --card-foreground: 25 30% 18%;
 
-    --popover: 0 0% 100%;
-    --popover-foreground: 0 0% 18%;
+    --popover: 40 40% 99%;
+    --popover-foreground: 25 30% 18%;
 
-    /* EtonHouse red — from the logo */
-    --primary: 355 75% 47%;
+    /* Warm coral primary — friendly, energetic, kid-centric */
+    --primary: 12 76% 61%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 180 8% 94%;
-    --secondary-foreground: 0 0% 25%;
+    --secondary: 38 30% 93%;
+    --secondary-foreground: 25 20% 30%;
 
-    --muted: 0 0% 93%;
-    --muted-foreground: 0 0% 45%;
+    --muted: 35 20% 91%;
+    --muted-foreground: 25 10% 48%;
 
-    /* Teal/cyan accent — from the brand imagery */
-    --accent: 175 70% 42%;
+    /* Sage green accent — nature, growth, learning */
+    --accent: 152 40% 49%;
     --accent-foreground: 0 0% 100%;
 
     --destructive: 0 65% 55%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 0 0% 89%;
-    --input: 0 0% 89%;
-    --ring: 355 75% 47%;
+    --border: 35 25% 88%;
+    --input: 35 20% 88%;
+    --ring: 12 76% 61%;
 
-    --radius: 0.75rem;
+    --radius: 1rem;
 
-    --sidebar-background: 0 0% 100%;
-    --sidebar-foreground: 0 0% 18%;
-    --sidebar-primary: 355 75% 47%;
+    /* Playful palette extras — used in badges, illustrations */
+    --sunshine: 42 95% 65%;
+    --sky: 200 80% 65%;
+    --lavender: 270 55% 70%;
+    --peach: 20 90% 78%;
+    --mint: 160 45% 72%;
+
+    --sidebar-background: 40 40% 99%;
+    --sidebar-foreground: 25 30% 18%;
+    --sidebar-primary: 12 76% 61%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 180 8% 94%;
-    --sidebar-accent-foreground: 0 0% 25%;
-    --sidebar-border: 0 0% 89%;
-    --sidebar-ring: 355 75% 47%;
+    --sidebar-accent: 38 30% 93%;
+    --sidebar-accent-foreground: 25 20% 30%;
+    --sidebar-border: 35 25% 88%;
+    --sidebar-ring: 12 76% 61%;
 
-    /* Brand-aligned effects */
-    --gradient-primary: linear-gradient(135deg, hsl(355 75% 47%), hsl(355 70% 55%));
-    --gradient-surface: linear-gradient(180deg, hsl(0 0% 98%), hsl(0 0% 96%));
-    --gradient-card: linear-gradient(145deg, hsl(0 0% 100%), hsl(180 5% 98%));
-    --gradient-card-hover: linear-gradient(145deg, hsl(0 0% 100%), hsl(355 15% 97%));
-    --shadow-soft: 0 2px 8px hsl(0 0% 18% / 0.06);
-    --shadow-card: 0 4px 20px hsl(355 75% 47% / 0.06), 0 2px 6px hsl(0 0% 18% / 0.04);
-    --shadow-card-hover: 0 8px 30px hsl(355 75% 47% / 0.12), 0 4px 12px hsl(0 0% 18% / 0.06);
-    --shadow-glow: 0 0 24px hsl(355 75% 47% / 0.18);
+    /* Effects */
+    --gradient-primary: linear-gradient(135deg, hsl(12 76% 61%), hsl(20 85% 68%));
+    --gradient-warm: linear-gradient(135deg, hsl(12 76% 61%), hsl(42 95% 65%));
+    --gradient-nature: linear-gradient(135deg, hsl(152 40% 49%), hsl(160 45% 62%));
+    --gradient-surface: linear-gradient(180deg, hsl(38 50% 97%), hsl(38 40% 95%));
+    --gradient-card: linear-gradient(145deg, hsl(40 40% 99%), hsl(38 35% 97%));
+    --gradient-card-hover: linear-gradient(145deg, hsl(40 45% 99%), hsl(25 30% 96%));
+    --shadow-soft: 0 2px 12px hsl(25 30% 18% / 0.05);
+    --shadow-card: 0 4px 24px hsl(25 40% 40% / 0.06), 0 1px 4px hsl(25 30% 18% / 0.04);
+    --shadow-card-hover: 0 8px 32px hsl(12 76% 61% / 0.1), 0 4px 12px hsl(25 30% 18% / 0.06);
+    --shadow-glow: 0 0 28px hsl(12 76% 61% / 0.15);
   }
 
   .dark {
-    /* Dark mode — EtonHouse brand tones */
-    --background: 200 10% 11%;
-    --foreground: 0 0% 92%;
-    --card: 200 8% 15%;
-    --card-foreground: 0 0% 92%;
-    --popover: 200 8% 15%;
-    --popover-foreground: 0 0% 92%;
-    --primary: 355 70% 58%;
+    --background: 25 15% 10%;
+    --foreground: 35 15% 90%;
+    --card: 25 12% 14%;
+    --card-foreground: 35 15% 90%;
+    --popover: 25 12% 14%;
+    --popover-foreground: 35 15% 90%;
+    --primary: 12 76% 64%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 200 8% 20%;
-    --secondary-foreground: 0 0% 85%;
-    --muted: 200 6% 22%;
-    --muted-foreground: 0 0% 55%;
-    --accent: 175 65% 50%;
-    --accent-foreground: 200 10% 11%;
+    --secondary: 25 12% 18%;
+    --secondary-foreground: 35 10% 80%;
+    --muted: 25 10% 20%;
+    --muted-foreground: 35 8% 55%;
+    --accent: 152 40% 52%;
+    --accent-foreground: 25 15% 10%;
     --destructive: 0 65% 55%;
     --destructive-foreground: 0 0% 100%;
-    --border: 200 8% 25%;
-    --input: 200 8% 25%;
-    --ring: 355 70% 58%;
+    --border: 25 10% 22%;
+    --input: 25 10% 22%;
+    --ring: 12 76% 64%;
 
-    --gradient-card: linear-gradient(145deg, hsl(200 8% 17%), hsl(200 8% 13%));
-    --gradient-card-hover: linear-gradient(145deg, hsl(200 8% 19%), hsl(200 8% 15%));
+    --gradient-card: linear-gradient(145deg, hsl(25 12% 16%), hsl(25 12% 12%));
+    --gradient-card-hover: linear-gradient(145deg, hsl(25 12% 18%), hsl(25 12% 14%));
     --shadow-card: 0 4px 20px hsl(0 0% 0% / 0.3), 0 2px 6px hsl(0 0% 0% / 0.2);
-    --shadow-card-hover: 0 8px 30px hsl(355 70% 58% / 0.15), 0 4px 12px hsl(0 0% 0% / 0.3);
-    --shadow-glow: 0 0 28px hsl(355 70% 58% / 0.25);
+    --shadow-card-hover: 0 8px 30px hsl(12 76% 64% / 0.15), 0 4px 12px hsl(0 0% 0% / 0.3);
+    --shadow-glow: 0 0 28px hsl(12 76% 64% / 0.25);
   }
 }
 
@@ -104,43 +111,37 @@
     @apply bg-background text-foreground antialiased;
     font-family: 'Nunito', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   }
+
+  /* Subtle texture overlay for warmth */
+  #root {
+    position: relative;
+    min-height: 100vh;
+  }
 }
 
 @layer components {
-  /* Modern card styles */
+  /* ── Panel / Card base ──────────────────────────────────────── */
   .glass-card {
     background: var(--gradient-card);
     border: 1px solid hsl(var(--border));
-    border-radius: 1rem;
+    border-radius: 1.25rem;
     box-shadow: var(--shadow-card);
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     position: relative;
     overflow: hidden;
   }
 
-  .glass-card::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(135deg, hsl(var(--primary) / 0.03) 0%, transparent 50%);
-    pointer-events: none;
-  }
-
   .glass-card:hover {
     background: var(--gradient-card-hover);
     box-shadow: var(--shadow-card-hover);
-    border-color: hsl(var(--primary) / 0.3);
+    border-color: hsl(var(--primary) / 0.25);
     transform: translateY(-2px);
-  }
-
-  .feature-card {
-    @apply glass-card px-5 py-4;
   }
 
   .panel-card {
     background: var(--gradient-card);
     border: 1px solid hsl(var(--border));
-    border-radius: 1rem;
+    border-radius: 1.25rem;
     box-shadow: var(--shadow-card);
     overflow: hidden;
   }
@@ -154,9 +155,10 @@
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
-    font-weight: 600;
+    font-weight: 700;
   }
 
+  /* ── Upload zone ────────────────────────────────────────────── */
   .upload-zone {
     @apply relative overflow-hidden rounded-2xl border-2 border-dashed transition-all duration-300;
     border-color: hsl(var(--border));
@@ -172,20 +174,30 @@
 
   .upload-zone.drag-over {
     border-color: hsl(var(--primary));
-    background: hsl(var(--primary) / 0.05);
+    background: hsl(var(--primary) / 0.06);
     box-shadow: var(--shadow-glow);
   }
 
+  /* ── Input ──────────────────────────────────────────────────── */
   .chat-input {
-    @apply w-full bg-secondary/50 border border-border rounded-xl px-4 py-3 text-foreground placeholder:text-muted-foreground focus:outline-none transition-all duration-200;
-    backdrop-filter: blur(8px);
+    @apply w-full bg-white/70 border border-border rounded-2xl px-4 py-3 text-foreground placeholder:text-muted-foreground focus:outline-none transition-all duration-200;
   }
 
   .chat-input:focus {
     border-color: hsl(var(--primary) / 0.5);
-    box-shadow: 0 0 0 3px hsl(var(--primary) / 0.1);
+    box-shadow: 0 0 0 3px hsl(var(--primary) / 0.08);
   }
 
+  /* ── Buttons ────────────────────────────────────────────────── */
+  .btn-primary {
+    @apply bg-gradient-to-r from-primary to-[hsl(20,85%,68%)] text-white font-bold rounded-2xl shadow-md hover:shadow-lg hover:brightness-105 active:scale-[0.98] transition-all duration-200;
+  }
+
+  .btn-secondary {
+    @apply bg-white border border-border text-foreground font-semibold rounded-2xl shadow-sm hover:bg-secondary/80 hover:border-primary/30 transition-all duration-200;
+  }
+
+  /* ── Streaming text ─────────────────────────────────────────── */
   .streaming-text {
     @apply max-w-none text-foreground/90 leading-relaxed;
   }
@@ -198,6 +210,57 @@
     @apply text-lg font-semibold text-foreground mt-4 mb-2;
   }
 
+  /* ── Kid-friendly decorative elements ───────────────────────── */
+  .decoration-dots {
+    background-image: radial-gradient(hsl(var(--primary) / 0.07) 1px, transparent 1px);
+    background-size: 20px 20px;
+  }
+
+  .badge-pastel {
+    @apply inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold;
+  }
+
+  .badge-coral   { @apply badge-pastel; background: hsla(12,76%,61%,0.12); color: hsl(12,76%,50%); }
+  .badge-sage    { @apply badge-pastel; background: hsla(152,40%,49%,0.12); color: hsl(152,40%,38%); }
+  .badge-sky     { @apply badge-pastel; background: hsla(200,80%,65%,0.12); color: hsl(200,80%,45%); }
+  .badge-sunshine { @apply badge-pastel; background: hsla(42,95%,65%,0.12); color: hsl(42,80%,40%); }
+  .badge-lavender { @apply badge-pastel; background: hsla(270,55%,70%,0.12); color: hsl(270,55%,50%); }
+  .badge-peach   { @apply badge-pastel; background: hsla(20,90%,78%,0.15); color: hsl(20,70%,45%); }
+
+  /* ── Report section cards ───────────────────────────────────── */
+  .report-section {
+    @apply rounded-2xl p-5 mb-4;
+    background: hsl(var(--card));
+    border: 1px solid hsl(var(--border) / 0.6);
+  }
+
+  /* ── Organic shape background blobs ─────────────────────────── */
+  .blob-bg::before {
+    content: '';
+    position: absolute;
+    width: 300px;
+    height: 300px;
+    border-radius: 50%;
+    background: hsl(var(--primary) / 0.04);
+    top: -100px;
+    right: -80px;
+    pointer-events: none;
+    filter: blur(60px);
+  }
+
+  .blob-bg::after {
+    content: '';
+    position: absolute;
+    width: 250px;
+    height: 250px;
+    border-radius: 50%;
+    background: hsl(var(--accent) / 0.04);
+    bottom: -80px;
+    left: -60px;
+    pointer-events: none;
+    filter: blur(60px);
+  }
+
   .streaming-text strong {
     @apply font-semibold text-foreground;
   }
@@ -208,36 +271,6 @@
 
   .streaming-text li {
     @apply text-foreground/90;
-  }
-
-  /* Icon container styles */
-  .icon-container {
-    @apply flex items-center justify-center rounded-xl transition-all duration-300;
-    background: linear-gradient(135deg, hsl(var(--primary) / 0.1), hsl(var(--primary) / 0.05));
-  }
-
-  .icon-container-lg {
-    @apply icon-container w-14 h-14;
-  }
-
-  .icon-container-sm {
-    @apply icon-container w-10 h-10;
-  }
-
-  /* Button enhancements */
-  .btn-primary {
-    @apply bg-primary text-primary-foreground rounded-xl font-medium transition-all duration-200;
-    box-shadow: 0 2px 8px hsl(var(--primary) / 0.3);
-    min-height: 48px;
-  }
-
-  .btn-primary:hover {
-    box-shadow: 0 4px 16px hsl(var(--primary) / 0.4);
-    transform: translateY(-1px);
-  }
-
-  .btn-primary:active {
-    transform: translateY(0);
   }
 
   .observation-narrative {

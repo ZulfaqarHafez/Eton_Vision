@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Settings, X, Check, ExternalLink, AlertCircle } from "lucide-react";
+import { Settings, X, Check, ExternalLink, AlertCircle, Sparkles } from "lucide-react";
 import {
   VLMProvider,
   VLMConfig,
@@ -115,23 +115,23 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 300 }}
             transition={{ type: "spring", damping: 25, stiffness: 300 }}
-            className="fixed right-0 top-0 h-full w-full max-w-md bg-background border-l border-border z-50 overflow-y-auto"
+            className="fixed right-0 top-0 h-full w-full max-w-md bg-[hsl(38,50%,97%)] border-l border-[hsl(35,25%,88%)] z-50 overflow-y-auto"
           >
             <div className="p-6">
               {/* Header */}
               <div className="flex items-center justify-between mb-6">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center">
-                    <Settings className="w-5 h-5 text-white" />
+                  <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[hsl(12,76%,61%)] to-[hsl(25,90%,72%)] flex items-center justify-center shadow-sm">
+                    <Sparkles className="w-5 h-5 text-white" />
                   </div>
                   <div>
-                    <h2 className="text-lg font-bold">VLM Settings</h2>
-                    <p className="text-xs text-muted-foreground">Configure your vision model</p>
+                    <h2 className="text-lg font-extrabold font-display">AI Settings</h2>
+                    <p className="text-xs text-muted-foreground font-medium">Choose your vision model</p>
                   </div>
                 </div>
                 <button
                   onClick={onClose}
-                  className="p-2 hover:bg-secondary rounded-lg transition-colors"
+                  className="p-2 hover:bg-white/60 rounded-xl transition-colors border border-transparent hover:border-[hsl(35,25%,88%)]"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -139,24 +139,24 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
 
               {/* Provider Selection */}
               <div className="space-y-4">
-                <label className="text-sm font-medium">AI Provider</label>
+                <label className="text-sm font-bold font-display">AI Provider</label>
                 <div className="grid gap-3">
                   {(Object.keys(providerInfo) as VLMProvider[]).map((provider) => (
                     <button
                       key={provider}
                       onClick={() => handleProviderChange(provider)}
-                      className={`p-4 rounded-xl border-2 text-left transition-all ${
+                      className={`p-4 rounded-2xl border-2 text-left transition-all ${
                         config.provider === provider
-                          ? 'border-primary bg-primary/5'
-                          : 'border-border hover:border-primary/50'
+                          ? 'border-[hsl(12,76%,61%)] bg-[hsl(12,76%,61%,0.06)]'
+                          : 'border-[hsl(35,25%,88%)] hover:border-[hsl(12,76%,61%,0.4)] bg-white/50'
                       }`}
                     >
                       <div className="flex items-start justify-between">
                         <div className="flex-1">
                           <div className="flex items-center gap-2">
-                            <span className="font-semibold">{providerInfo[provider].name}</span>
+                            <span className="font-bold font-display">{providerInfo[provider].name}</span>
                             {providerInfo[provider].requiresKey && (
-                              <span className="text-xs px-2 py-0.5 bg-amber-500/10 text-amber-600 rounded-full">
+                              <span className="text-[10px] px-2 py-0.5 bg-[hsl(42,95%,65%,0.15)] text-[hsl(42,60%,40%)] rounded-full font-bold">
                                 API Key Required
                               </span>
                             )}
@@ -166,7 +166,7 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                           </p>
                         </div>
                         {config.provider === provider && (
-                          <Check className="w-5 h-5 text-primary flex-shrink-0" />
+                          <Check className="w-5 h-5 text-[hsl(12,76%,61%)] flex-shrink-0" />
                         )}
                       </div>
                     </button>
@@ -177,7 +177,7 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
               {/* API Key */}
               <div className="mt-6 space-y-2">
                 <div className="flex items-center justify-between">
-                  <label className="text-sm font-medium">
+                  <label className="text-sm font-bold font-display">
                     API Key {!providerInfo[config.provider].requiresKey && '(Optional)'}
                   </label>
                   <a
@@ -209,7 +209,7 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                     value={config.apiKey || ''}
                     onChange={(e) => setLocalConfig({ ...config, apiKey: e.target.value })}
                     placeholder="Enter your API key..."
-                    className="w-full px-4 py-3 rounded-lg border border-border bg-secondary/30 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                    className="w-full px-4 py-3 rounded-xl border border-[hsl(35,25%,88%)] bg-white/70 text-sm focus:outline-none focus:ring-2 focus:ring-[hsl(12,76%,61%,0.3)] focus:border-[hsl(12,76%,61%,0.5)]"
                   />
                 )}
                 {config.provider === 'huggingface' && !config.apiKey && (
@@ -222,11 +222,11 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
 
               {/* Model Selection */}
               <div className="mt-6 space-y-2">
-                <label className="text-sm font-medium">Model</label>
+                <label className="text-sm font-bold font-display">Model</label>
                 <select
                   value={config.model}
                   onChange={(e) => setLocalConfig({ ...config, model: e.target.value })}
-                  className="w-full px-4 py-3 rounded-lg border border-border bg-secondary/30 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                  className="w-full px-4 py-3 rounded-xl border border-[hsl(35,25%,88%)] bg-white/70 text-sm focus:outline-none focus:ring-2 focus:ring-[hsl(12,76%,61%,0.3)] focus:border-[hsl(12,76%,61%,0.5)]"
                 >
                   {AVAILABLE_MODELS[config.provider].map((model) => (
                     <option key={model.id} value={model.id}>
@@ -238,21 +238,21 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
 
               {/* Base URL (Advanced) */}
               <div className="mt-6 space-y-2">
-                <label className="text-sm font-medium text-muted-foreground">
+                <label className="text-sm font-bold font-display text-muted-foreground">
                   Base URL (Advanced)
                 </label>
                 <input
                   type="text"
                   value={config.baseUrl || ''}
                   onChange={(e) => setLocalConfig({ ...config, baseUrl: e.target.value })}
-                  className="w-full px-4 py-3 rounded-lg border border-border bg-secondary/30 focus:outline-none focus:ring-2 focus:ring-primary font-mono text-xs"
+                  className="w-full px-4 py-3 rounded-xl border border-[hsl(35,25%,88%)] bg-white/70 focus:outline-none focus:ring-2 focus:ring-[hsl(12,76%,61%,0.3)] focus:border-[hsl(12,76%,61%,0.5)] font-mono text-xs"
                 />
               </div>
 
               {/* Ollama Instructions */}
               {config.provider === 'ollama' && (
-                <div className="mt-6 p-4 rounded-lg bg-secondary/50 border border-border">
-                  <h3 className="text-sm font-semibold mb-2">Setup Instructions</h3>
+                <div className="mt-6 p-4 rounded-2xl bg-white/50 border border-[hsl(35,25%,88%)]">
+                  <h3 className="text-sm font-bold font-display mb-2">Setup Instructions</h3>
                   <ol className="text-xs text-muted-foreground space-y-2">
                     <li>1. Install Ollama from <a href="https://ollama.ai" target="_blank" className="text-primary hover:underline">ollama.ai</a></li>
                     <li>2. Run: <code className="px-1.5 py-0.5 bg-background rounded">ollama pull llava</code></li>
@@ -266,7 +266,7 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
               <div className="mt-8">
                 <button
                   onClick={handleSave}
-                  className="w-full py-3 rounded-xl bg-gradient-to-r from-primary to-accent text-white font-semibold hover:opacity-90 transition-opacity flex items-center justify-center gap-2"
+                  className="w-full py-3 rounded-2xl bg-gradient-to-r from-[hsl(12,76%,61%)] to-[hsl(25,90%,72%)] text-white font-extrabold font-display hover:opacity-90 transition-all shadow-sm hover:shadow-md flex items-center justify-center gap-2"
                 >
                   {saved ? (
                     <>
@@ -280,7 +280,7 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
               </div>
 
               {/* Current Config Display */}
-              <div className="mt-6 p-4 rounded-lg bg-secondary/30 border border-border">
+              <div className="mt-6 p-4 rounded-2xl bg-white/40 border border-[hsl(35,25%,88%)]">
                 <p className="text-xs text-muted-foreground">
                   Current: <span className="font-mono">{config.provider}</span> / <span className="font-mono">{config.model}</span>
                 </p>
