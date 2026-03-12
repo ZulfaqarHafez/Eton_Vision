@@ -1,13 +1,14 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { motion } from "framer-motion";
 import { Loader2, Sparkles, PenLine, RefreshCw } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
 import { Header } from "@/frontend/components/Header";
-import { ImageUpload } from "@/frontend/components/ImageUpload";
+import { ImageUpload, type UploadedPhoto } from "@/frontend/components/ImageUpload";
 import { ReportPanel } from "@/frontend/components/ReportPanel";
 import { SettingsPanel } from "@/frontend/components/SettingsPanel";
 import { FaceTagPanel } from "@/frontend/components/FaceTagPanel";
 import { StudentList } from "@/frontend/components/StudentList";
+import { PhotoReview, type ScannedPhoto } from "@/frontend/components/PhotoReview";
 import { analyzeImage, refineReport } from "@/backend/services/vlm";
 import { parseReport, type ParsedReport } from "@/frontend/lib/parseReport";
 import type { TaggedChild } from "@/frontend/lib/supabase";
@@ -32,9 +33,7 @@ const Index = () => {
   const [searchParams] = useSearchParams();
   const activeTab = searchParams.get("tab") === "students" ? "students" : "reports";
 
-  const [selectedImage, setSelectedImage] = useState<string | null>(null);
-  const [imageFile, setImageFile] = useState<File | null>(null);
-  const [taggedChildren, setTaggedChildren] = useState<TaggedChild[]>([]);
+  // ── Shared report state ──────────────────────────────────
   const [context, setContext] = useState("");
   const [reportText, setReportText] = useState('');
   const [reportStatus, setReportStatus] = useState<ReportStatus>('idle');
@@ -43,8 +42,58 @@ const Index = () => {
   const [isRefining, setIsRefining] = useState(false);
   const [refinePrompt, setRefinePrompt] = useState("");
 
-  const childNames = taggedChildren.map((c) => c.name).join(', ');
+  // ── Batch mode state (persists across tab switches) ──────
+  const [batchPhotos, setBatchPhotos] = useState<UploadedPhoto[]>([]);
+  const [scannedResults, setScannedResults] = useState<ScannedPhoto[]>([]);
+  const [primaryPhotoIndex, setPrimaryPhotoIndex] = useState(0);
+  const [excludedStudentIds, setExcludedStudentIds] = useState<Set<string>>(new Set());
+  const [manuallyAddedStudents, setManuallyAddedStudents] = useState<TaggedChild[]>([]);
 
+  // ── Legacy single-photo state (fallback) ─────────────────
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [taggedChildren, setTaggedChildren] = useState<TaggedChild[]>([]);
+
+  const isBatchMode = batchPhotos.length > 0;
+
+  // ── Consolidated students from all scanned photos ────────
+  const consolidatedTags = useMemo(() => {
+    const tagMap = new Map<string, TaggedChild>();
+    for (const sp of scannedResults) {
+      for (const child of sp.taggedChildren) {
+        const existing = tagMap.get(child.id);
+        if (!existing || child.confidence > existing.confidence) {
+          tagMap.set(child.id, child);
+        }
+      }
+    }
+    // Include manually added students
+    for (const child of manuallyAddedStudents) {
+      if (!tagMap.has(child.id)) {
+        tagMap.set(child.id, child);
+      }
+    }
+    return Array.from(tagMap.values());
+  }, [scannedResults, manuallyAddedStudents]);
+
+  const activeStudents = useMemo(
+    () => consolidatedTags.filter(t => !excludedStudentIds.has(t.id)),
+    [consolidatedTags, excludedStudentIds],
+  );
+
+  // ── Derived values for generate ──────────────────────────
+  const activeFile = isBatchMode
+    ? batchPhotos[primaryPhotoIndex]?.file ?? null
+    : imageFile;
+  const activePreview = isBatchMode
+    ? batchPhotos[primaryPhotoIndex]?.preview ?? null
+    : selectedImage;
+  const activeChildren = isBatchMode ? activeStudents : taggedChildren;
+  const childNames = activeChildren.map(c => c.name).join(', ');
+
+  // ── Handlers ─────────────────────────────────────────────
+
+  // Legacy single-photo select (not used when multiple=true, kept for safety)
   const handleImageSelect = useCallback((file: File, preview: string) => {
     setSelectedImage(preview);
     setImageFile(file);
@@ -54,7 +103,31 @@ const Index = () => {
     setReportError(null);
   }, []);
 
-  const handleClearImage = useCallback(() => {
+  const handleClearAll = useCallback(() => {
+    // Clear batch
+    setBatchPhotos([]);
+    setScannedResults([]);
+    setPrimaryPhotoIndex(0);
+    setExcludedStudentIds(new Set());
+    setManuallyAddedStudents([]);
+    // Clear legacy
+    setSelectedImage(null);
+    setImageFile(null);
+    setTaggedChildren([]);
+    // Clear report
+    setReportText('');
+    setReportStatus('idle');
+    setReportError(null);
+    setRefinePrompt('');
+  }, []);
+
+  const handleBatchSelect = useCallback((photos: UploadedPhoto[]) => {
+    setBatchPhotos(photos);
+    setScannedResults([]);
+    setPrimaryPhotoIndex(0);
+    setExcludedStudentIds(new Set());
+    setManuallyAddedStudents([]);
+    // Clear legacy single-photo state
     setSelectedImage(null);
     setImageFile(null);
     setTaggedChildren([]);
@@ -63,41 +136,71 @@ const Index = () => {
     setReportError(null);
   }, []);
 
-  const handleGenerate = useCallback(async () => {
-    if (!selectedImage || !imageFile || taggedChildren.length === 0) return;
+  const handleAddMorePhotos = useCallback((newPhotos: UploadedPhoto[]) => {
+    setBatchPhotos(prev => [...prev, ...newPhotos]);
+  }, []);
 
-    console.log('[Generate] Starting report generation...');
-    console.log('[Generate] Provider:', (() => { try { const c = JSON.parse(localStorage.getItem('vlm_config') || '{}'); return c.provider || 'colab'; } catch { return 'colab'; } })());
-    console.log('[Generate] Child names:', childNames);
-    console.log('[Generate] Context:', context.trim() || 'Classroom activity');
+  const handleRemovePhoto = useCallback((index: number) => {
+    setBatchPhotos(prev => prev.filter((_, i) => i !== index));
+    setScannedResults(prev => prev.filter((_, i) => i !== index));
+    setPrimaryPhotoIndex(prev => {
+      if (prev > index) return prev - 1;
+      if (prev === index) return 0;
+      return prev;
+    });
+  }, []);
+
+  const handleScanComplete = useCallback((results: ScannedPhoto[]) => {
+    setScannedResults(results);
+  }, []);
+
+  const handleToggleStudent = useCallback((childId: string) => {
+    setExcludedStudentIds(prev => {
+      const next = new Set(prev);
+      if (next.has(childId)) next.delete(childId);
+      else next.add(childId);
+      return next;
+    });
+  }, []);
+
+  const handleManualAddStudent = useCallback((child: TaggedChild) => {
+    setManuallyAddedStudents(prev => {
+      if (prev.some(c => c.id === child.id)) return prev;
+      return [...prev, child];
+    });
+    // Make sure it's not excluded
+    setExcludedStudentIds(prev => {
+      const next = new Set(prev);
+      next.delete(child.id);
+      return next;
+    });
+  }, []);
+
+  const handleGenerate = useCallback(async () => {
+    if (!activeFile || activeChildren.length === 0) return;
 
     setReportText('');
     setReportError(null);
     setReportStatus('loading');
 
     try {
-      await analyzeImage(imageFile, childNames, context.trim() || "Classroom activity", (chunk) => {
+      await analyzeImage(activeFile, childNames, context.trim() || "Classroom activity", (chunk) => {
         setReportText((prev) => prev + chunk);
       });
-      console.log('[Generate] Done.');
       setReportStatus('done');
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-      console.error('[Generate] Error:', errorMsg);
       setReportError(errorMsg);
       setReportStatus('error');
     }
-  }, [selectedImage, imageFile, taggedChildren, childNames, context]);
+  }, [activeFile, activeChildren, childNames, context]);
 
   const isLoading = reportStatus === 'loading';
 
   const handleFollowUp = useCallback(async () => {
     if (!reportText || isRefining || !refinePrompt.trim()) return;
 
-    console.log('[Refine] Starting refinement with prompt:', refinePrompt);
-
     const currentReport = reportText;
-
     setIsRefining(true);
     setReportError(null);
     setReportText('');
@@ -108,23 +211,21 @@ const Index = () => {
         currentReport,
         refinePrompt,
         childNames,
-        imageFile,
+        activeFile,
         (chunk) => {
           setReportText((prev) => prev + chunk);
         }
       );
-      console.log('[Refine] Done.');
       setReportStatus('done');
       setRefinePrompt('');
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-      console.error('[Refine] Error:', errorMsg);
       setReportError(errorMsg);
       setReportStatus('error');
     } finally {
       setIsRefining(false);
     }
-  }, [reportText, isRefining, refinePrompt, childNames, imageFile]);
+  }, [reportText, isRefining, refinePrompt, childNames, activeFile]);
 
   const handleReportEdit = useCallback((updated: ParsedReport) => {
     setReportText(updated.raw);
@@ -160,36 +261,58 @@ const Index = () => {
                 </div>
               </div>
 
-              {/* Image upload / face tagging */}
-              <div className="space-y-1">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-primary/60" />
-                    Classroom Photo
-                  </label>
-                  {selectedImage && (
-                    <button
-                      onClick={handleClearImage}
-                      className="text-xs text-primary hover:underline font-bold py-1 px-2 rounded-lg hover:bg-primary/5 transition-colors"
-                    >
-                      Change photo
-                    </button>
-                  )}
-                </div>
-                {!selectedImage && (
-                  <ImageUpload
-                    onImageSelect={handleImageSelect}
-                    selectedImage={selectedImage}
-                    onClear={handleClearImage}
-                  />
-                )}
-              </div>
+              {/* ── Upload or PhotoReview ──────────────────── */}
+              {isBatchMode ? (
+                <PhotoReview
+                  photos={batchPhotos}
+                  savedScans={scannedResults}
+                  onScanComplete={handleScanComplete}
+                  primaryIndex={primaryPhotoIndex}
+                  onSetPrimary={setPrimaryPhotoIndex}
+                  onAddMore={handleAddMorePhotos}
+                  onRemovePhoto={handleRemovePhoto}
+                  consolidatedTags={consolidatedTags}
+                  excludedStudentIds={excludedStudentIds}
+                  onToggleStudent={handleToggleStudent}
+                  onManualAdd={handleManualAddStudent}
+                  onClearAll={handleClearAll}
+                />
+              ) : (
+                <>
+                  {/* Single-photo upload */}
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-primary/60" />
+                        Classroom Photo
+                      </label>
+                      {selectedImage && (
+                        <button
+                          onClick={handleClearAll}
+                          className="text-xs text-primary hover:underline font-bold py-1 px-2 rounded-lg hover:bg-primary/5 transition-colors"
+                        >
+                          Change photo
+                        </button>
+                      )}
+                    </div>
+                    {!selectedImage && (
+                      <ImageUpload
+                        onImageSelect={handleImageSelect}
+                        onBatchSelect={handleBatchSelect}
+                        selectedImage={selectedImage}
+                        onClear={handleClearAll}
+                        multiple
+                      />
+                    )}
+                  </div>
 
-              <FaceTagPanel
-                imageFile={imageFile}
-                imagePreview={selectedImage}
-                onTagsChange={setTaggedChildren}
-              />
+                  <FaceTagPanel
+                    imageFile={imageFile}
+                    imagePreview={selectedImage}
+                    onTagsChange={setTaggedChildren}
+                  />
+                </>
+              )}
 
               {/* Activity Context */}
               <div className="space-y-1.5">
@@ -255,7 +378,7 @@ const Index = () => {
                 )}
                 <button
                   onClick={handleGenerate}
-                  disabled={!selectedImage || taggedChildren.length === 0 || isLoading}
+                  disabled={!activeFile || activeChildren.length === 0 || isLoading}
                   className={`w-full flex items-center justify-center gap-2.5 py-3.5 text-[15px] font-bold disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-200 ${
                     reportStatus === 'done'
                       ? 'btn-secondary'
@@ -282,7 +405,7 @@ const Index = () => {
               </div>
             </motion.div>
 
-            {/* Right Panel — Report */}
+            {/* Right Panel — Always Report */}
             <motion.div
               initial={{ opacity: 0, x: 12 }}
               animate={{ opacity: 1, x: 0 }}
@@ -296,9 +419,9 @@ const Index = () => {
                 onRetry={handleGenerate}
                 childName={childNames}
                 isStreaming={reportStatus === 'loading' && reportText.length > 0}
-                taggedChildren={taggedChildren}
-                imagePreview={selectedImage}
-                imageFile={imageFile}
+                taggedChildren={activeChildren}
+                imagePreview={activePreview}
+                imageFile={activeFile}
                 onReportEdit={handleReportEdit}
               />
             </motion.div>

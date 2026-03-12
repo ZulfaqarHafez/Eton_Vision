@@ -2,10 +2,17 @@ import { useState, useCallback } from "react";
 import { motion } from "framer-motion";
 import { Upload, Image as ImageIcon, Camera, Sparkles } from "lucide-react";
 
+export interface UploadedPhoto {
+  file: File;
+  preview: string;
+}
+
 interface ImageUploadProps {
   onImageSelect: (file: File, preview: string) => void;
+  onBatchSelect?: (photos: UploadedPhoto[]) => void;
   selectedImage: string | null;
   onClear: () => void;
+  multiple?: boolean;
 }
 
 /* Cute camera illustration for the upload zone */
@@ -28,8 +35,25 @@ function UploadIllustration({ active }: { active?: boolean }) {
   );
 }
 
-export function ImageUpload({ onImageSelect, selectedImage, onClear }: ImageUploadProps) {
+export function ImageUpload({ onImageSelect, onBatchSelect, selectedImage, onClear, multiple }: ImageUploadProps) {
   const [isDragOver, setIsDragOver] = useState(false);
+
+  const processFiles = useCallback((files: FileList | File[]) => {
+    const imageFiles = Array.from(files).filter(f => f.type.startsWith("image/"));
+    if (imageFiles.length === 0) return;
+
+    if (multiple && onBatchSelect && imageFiles.length > 0) {
+      const photos: UploadedPhoto[] = imageFiles.map(file => ({
+        file,
+        preview: URL.createObjectURL(file),
+      }));
+      onBatchSelect(photos);
+    } else {
+      const file = imageFiles[0];
+      const preview = URL.createObjectURL(file);
+      onImageSelect(file, preview);
+    }
+  }, [multiple, onBatchSelect, onImageSelect]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -44,21 +68,14 @@ export function ImageUpload({ onImageSelect, selectedImage, onClear }: ImageUplo
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOver(false);
-    
-    const file = e.dataTransfer.files[0];
-    if (file && file.type.startsWith("image/")) {
-      const preview = URL.createObjectURL(file);
-      onImageSelect(file, preview);
-    }
-  }, [onImageSelect]);
+    processFiles(e.dataTransfer.files);
+  }, [processFiles]);
 
   const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file && file.type.startsWith("image/")) {
-      const preview = URL.createObjectURL(file);
-      onImageSelect(file, preview);
+    if (e.target.files && e.target.files.length > 0) {
+      processFiles(e.target.files);
     }
-  }, [onImageSelect]);
+  }, [processFiles]);
 
   if (selectedImage) return null;
 
@@ -81,6 +98,7 @@ export function ImageUpload({ onImageSelect, selectedImage, onClear }: ImageUplo
           type="file"
           accept="image/*"
           className="hidden"
+          multiple={multiple}
           onChange={handleFileSelect}
         />
         
@@ -93,10 +111,10 @@ export function ImageUpload({ onImageSelect, selectedImage, onClear }: ImageUplo
           
           <div className="text-center space-y-1">
             <p className="text-lg font-extrabold text-foreground font-display">
-              {isDragOver ? "Drop it here!" : "Snap & Upload"}
+              {isDragOver ? "Drop it here!" : multiple ? "Batch Upload" : "Snap & Upload"}
             </p>
             <p className="text-sm text-muted-foreground font-medium">
-              Drag and drop or click to browse
+              {multiple ? "Select multiple photos or drag & drop" : "Drag and drop or click to browse"}
             </p>
           </div>
 
