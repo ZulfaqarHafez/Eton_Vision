@@ -22,6 +22,17 @@ interface LiveScanEnrolmentProps {
   onSuccess?: () => void;
 }
 
+interface NormalizedFaceBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+function clampToUnit(value: number) {
+  return Math.max(0, Math.min(1, value));
+}
+
 const THRESHOLDS = {
   FRONT: { min: 2.2, max: 2.6 },
   LEFT: 1.2,
@@ -60,6 +71,7 @@ export function LiveScanEnrolment({ onSuccess }: LiveScanEnrolmentProps) {
   const [capturedData, setCapturedData] = useState<Record<string, CapturedAngle>>({});
   const [telemetry, setTelemetry] = useState({ score: 0, ratio: 0, detected: false });
   const [liveThumbnail, setLiveThumbnail] = useState<string | null>(null);
+  const [liveFaceBox, setLiveFaceBox] = useState<NormalizedFaceBox | null>(null);
   const [lastDetection, setLastDetection] = useState<faceapi.WithFaceDescriptor<faceapi.WithFaceLandmarks<{ detection: faceapi.FaceDetection }>> | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -108,6 +120,7 @@ export function LiveScanEnrolment({ onSuccess }: LiveScanEnrolmentProps) {
         if (!detection) {
           setTelemetry({ score: 0, ratio: 0, detected: false });
           setLiveThumbnail(null);
+          setLiveFaceBox(null);
           return;
         }
 
@@ -119,6 +132,16 @@ export function LiveScanEnrolment({ onSuccess }: LiveScanEnrolmentProps) {
 
         setTelemetry({ score: detection.detection.score, ratio, detected: true });
         setLastDetection(detection);
+
+        const videoWidth = videoRef.current.videoWidth || 640;
+        const videoHeight = videoRef.current.videoHeight || 480;
+        const box = detection.detection.box;
+        setLiveFaceBox({
+          x: clampToUnit(box.x / videoWidth),
+          y: clampToUnit(box.y / videoHeight),
+          width: clampToUnit(box.width / videoWidth),
+          height: clampToUnit(box.height / videoHeight),
+        });
 
         const preview = getFaceCanvas(videoRef.current!, detection.detection.box);
         setLiveThumbnail(preview);
@@ -169,6 +192,7 @@ export function LiveScanEnrolment({ onSuccess }: LiveScanEnrolmentProps) {
       setClassGroup('');
       setCapturedData({});
       setLiveThumbnail(null);
+      setLiveFaceBox(null);
       onSuccess?.();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Enrolment failed');
@@ -181,6 +205,7 @@ export function LiveScanEnrolment({ onSuccess }: LiveScanEnrolmentProps) {
     setCurrentState('IDLE');
     setCapturedData({});
     setLiveThumbnail(null);
+    setLiveFaceBox(null);
     setTelemetry({ score: 0, ratio: 0, detected: false });
   };
 
@@ -304,6 +329,19 @@ export function LiveScanEnrolment({ onSuccess }: LiveScanEnrolmentProps) {
             className="w-full rounded-lg border-2 border-primary/50"
             style={{ transform: 'scaleX(-1)' }}
           />
+          {liveFaceBox && (
+            <div className="absolute inset-0 pointer-events-none" style={{ transform: 'scaleX(-1)' }}>
+              <div
+                className="absolute border-2 border-green-500 rounded-md bg-green-500/10"
+                style={{
+                  left: `${clampToUnit(liveFaceBox.x) * 100}%`,
+                  top: `${clampToUnit(liveFaceBox.y) * 100}%`,
+                  width: `${clampToUnit(liveFaceBox.width) * 100}%`,
+                  height: `${clampToUnit(liveFaceBox.height) * 100}%`,
+                }}
+              />
+            </div>
+          )}
           <div className="absolute top-2 left-2 px-2 py-0.5 bg-black/60 text-white text-[10px] rounded">
             Live Feed
           </div>

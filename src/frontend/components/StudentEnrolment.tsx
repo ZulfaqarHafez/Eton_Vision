@@ -14,6 +14,17 @@ interface StudentEnrolmentProps {
   onSuccess?: () => void;
 }
 
+interface NormalizedFaceBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+function clampToUnit(value: number) {
+  return Math.max(0, Math.min(1, value));
+}
+
 export function StudentEnrolment({ onSuccess }: StudentEnrolmentProps) {
   const { modelsLoaded, getFullDetection } = useFaceDetection();
   const [name, setName] = useState('');
@@ -22,6 +33,7 @@ export function StudentEnrolment({ onSuccess }: StudentEnrolmentProps) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [facePreview, setFacePreview] = useState<string | null>(null);
+  const [detectedFaceBox, setDetectedFaceBox] = useState<NormalizedFaceBox | null>(null);
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -32,6 +44,7 @@ export function StudentEnrolment({ onSuccess }: StudentEnrolmentProps) {
     setPhotoFile(file);
     setPhotoPreview(URL.createObjectURL(file));
     setFacePreview(null);
+    setDetectedFaceBox(null);
 
     if (!modelsLoaded) return;
 
@@ -40,8 +53,21 @@ export function StudentEnrolment({ onSuccess }: StudentEnrolmentProps) {
       const img = await faceapi.bufferToImage(file);
       const detection = await getFullDetection(img);
       if (detection) {
+        const imageWidth = img.naturalWidth || img.width;
+        const imageHeight = img.naturalHeight || img.height;
+        const box = detection.detection.box;
+
+        setDetectedFaceBox({
+          x: clampToUnit(box.x / imageWidth),
+          y: clampToUnit(box.y / imageHeight),
+          width: clampToUnit(box.width / imageWidth),
+          height: clampToUnit(box.height / imageHeight),
+        });
+
         const thumbnail = getFaceCanvas(img, detection.detection.box);
         setFacePreview(thumbnail);
+      } else {
+        setDetectedFaceBox(null);
       }
     } catch (err) {
       console.error('Face preview error:', err);
@@ -69,9 +95,20 @@ export function StudentEnrolment({ onSuccess }: StudentEnrolmentProps) {
       const detection = await getFullDetection(img);
 
       if (!detection) {
+        setDetectedFaceBox(null);
         toast.error('No face detected. Please use a clearer photo.');
         return;
       }
+
+      const imageWidth = img.naturalWidth || img.width;
+      const imageHeight = img.naturalHeight || img.height;
+      const box = detection.detection.box;
+      setDetectedFaceBox({
+        x: clampToUnit(box.x / imageWidth),
+        y: clampToUnit(box.y / imageHeight),
+        width: clampToUnit(box.width / imageWidth),
+        height: clampToUnit(box.height / imageHeight),
+      });
 
       const faceThumbnail = getFaceCanvas(img, detection.detection.box);
       const embedding = Array.from(detection.descriptor);
@@ -103,6 +140,7 @@ export function StudentEnrolment({ onSuccess }: StudentEnrolmentProps) {
       setConsent(false);
       setPhotoPreview(null);
       setFacePreview(null);
+      setDetectedFaceBox(null);
       setPhotoFile(null);
       if (fileInputRef.current) fileInputRef.current.value = '';
       onSuccess?.();
@@ -154,12 +192,30 @@ export function StudentEnrolment({ onSuccess }: StudentEnrolmentProps) {
             disabled={isProcessing}
           />
           {photoPreview ? (
-            <div className="flex items-center gap-4 w-full">
-              <img
-                src={photoPreview}
-                alt="Upload preview"
-                className="w-20 h-20 object-cover rounded-lg"
-              />
+            <div className="space-y-3 w-full">
+              <div className="relative rounded-lg overflow-hidden border border-border/60 bg-black/5">
+                <img
+                  src={photoPreview}
+                  alt="Upload preview"
+                  className="w-full max-h-[220px] object-contain"
+                />
+                {detectedFaceBox && (
+                  <div
+                    className="absolute border-2 border-green-500 rounded-md bg-green-500/10"
+                    style={{
+                      left: `${clampToUnit(detectedFaceBox.x) * 100}%`,
+                      top: `${clampToUnit(detectedFaceBox.y) * 100}%`,
+                      width: `${clampToUnit(detectedFaceBox.width) * 100}%`,
+                      height: `${clampToUnit(detectedFaceBox.height) * 100}%`,
+                    }}
+                  >
+                    <span className="absolute left-1 top-1 text-[10px] font-bold text-white bg-green-600/90 px-1.5 py-0.5 rounded">
+                      Enrol face
+                    </span>
+                  </div>
+                )}
+              </div>
+
               {facePreview ? (
                 <div className="flex items-center gap-3">
                   <img
@@ -167,9 +223,14 @@ export function StudentEnrolment({ onSuccess }: StudentEnrolmentProps) {
                     alt="Detected face"
                     className="w-14 h-14 rounded-full object-cover border-2 border-green-500"
                   />
-                  <div className="flex items-center gap-1.5 text-sm text-green-600 font-medium">
-                    <CheckCircle2 className="w-4 h-4" />
-                    Face detected
+                  <div className="flex flex-col text-sm">
+                    <span className="flex items-center gap-1.5 text-green-600 font-medium">
+                      <CheckCircle2 className="w-4 h-4" />
+                      Face detected
+                    </span>
+                    <span className="text-[11px] text-muted-foreground">
+                      Green box shows the face being added to training data.
+                    </span>
                   </div>
                 </div>
               ) : (

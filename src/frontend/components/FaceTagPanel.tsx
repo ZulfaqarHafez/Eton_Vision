@@ -101,16 +101,23 @@ export function FaceTagPanel({ imageFile, imagePreview, onTagsChange }: FaceTagP
   const drawCanvas = useCallback(() => {
     const canvas = canvasRef.current;
     const img = imgRef.current;
-    if (!canvas || !img) return;
+    if (!canvas || !img || !img.naturalWidth || !img.naturalHeight) return;
 
-    canvas.width = img.clientWidth;
-    canvas.height = img.clientHeight;
+    const displayW = img.clientWidth;
+    const displayH = img.clientHeight;
+
+    // Set canvas buffer AND display size to exactly match the image
+    canvas.width = displayW;
+    canvas.height = displayH;
+    canvas.style.width = displayW + 'px';
+    canvas.style.height = displayH + 'px';
+
     const ctx = canvas.getContext('2d')!;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.clearRect(0, 0, displayW, displayH);
 
     // Scale factor: displayed size vs natural size
-    const scaleX = img.clientWidth / img.naturalWidth;
-    const scaleY = img.clientHeight / img.naturalHeight;
+    const scaleX = displayW / img.naturalWidth;
+    const scaleY = displayH / img.naturalHeight;
 
     // Draw detection boxes
     for (const face of detectedFaces) {
@@ -163,9 +170,9 @@ export function FaceTagPanel({ imageFile, imagePreview, onTagsChange }: FaceTagP
     drawCanvas();
   }, [drawCanvas]);
 
-  // Also redraw on image load
+  // Also redraw on image load (image may not have dimensions on first render)
   const handleImageLoad = () => {
-    drawCanvas();
+    requestAnimationFrame(drawCanvas);
   };
 
   const isPointInBox = (px: number, py: number, box: { x: number; y: number; width: number; height: number }) => {
@@ -254,19 +261,47 @@ export function FaceTagPanel({ imageFile, imagePreview, onTagsChange }: FaceTagP
       height: natBottomRight.y - natTopLeft.y,
     };
 
-    // Try to detect a face in the full image (face-api doesn't support region crops easily)
-    // We'll use the drawn box as the bounding box and try to get a descriptor
+    // Detect inside the drawn region so manual corrections train the intended face
     try {
       const img = imgRef.current!;
+      const cropCanvas = document.createElement('canvas');
+      cropCanvas.width = Math.max(1, Math.round(naturalBox.width));
+      cropCanvas.height = Math.max(1, Math.round(naturalBox.height));
+
+      const cropCtx = cropCanvas.getContext('2d');
+      if (!cropCtx) {
+        setDrawBox(null);
+        return;
+      }
+
+      cropCtx.drawImage(
+        img,
+        naturalBox.x,
+        naturalBox.y,
+        naturalBox.width,
+        naturalBox.height,
+        0,
+        0,
+        cropCanvas.width,
+        cropCanvas.height,
+      );
+
       const detection = await faceapi
-        .detectSingleFace(img)
+        .detectSingleFace(cropCanvas)
         .withFaceLandmarks()
         .withFaceDescriptor();
 
       if (detection) {
+        const refinedBox = {
+          x: naturalBox.x + detection.detection.box.x,
+          y: naturalBox.y + detection.detection.box.y,
+          width: detection.detection.box.width,
+          height: detection.detection.box.height,
+        };
+
         setPendingTag({
           faceIndex: -1,
-          box: naturalBox,
+          box: refinedBox,
           descriptor: Array.from(detection.descriptor),
           isEdit: false,
           popoverTop: drawBox.y,
@@ -436,19 +471,17 @@ export function FaceTagPanel({ imageFile, imagePreview, onTagsChange }: FaceTagP
           ref={imgRef}
           src={imagePreview}
           alt="Uploaded preview"
-          className="w-full"
-          style={{ maxHeight: 280, objectFit: 'cover' }}
+          className="w-full h-auto block"
           onLoad={handleImageLoad}
         />
-        {hasScanned && (
-          <canvas
-            ref={canvasRef}
-            className="absolute top-0 left-0 w-full h-full"
-            onMouseDown={handleMouseDown}
-            onMouseMove={handleMouseMove}
-            onMouseUp={handleMouseUp}
-          />
-        )}
+        <canvas
+          ref={canvasRef}
+          className="absolute top-0 left-0"
+          style={{ pointerEvents: hasScanned ? 'auto' : 'none' }}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+        />
 
         {/* Popover for click-to-correct */}
         {pendingTag && (

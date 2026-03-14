@@ -33,6 +33,17 @@ const Index = () => {
   const [searchParams] = useSearchParams();
   const activeTab = searchParams.get("tab") === "students" ? "students" : "reports";
 
+  const shiftPhotoIndexedRecord = <T,>(source: Record<number, T>, removedIndex: number): Record<number, T> => {
+    const next: Record<number, T> = {};
+    for (const [key, value] of Object.entries(source)) {
+      const numericKey = Number(key);
+      if (numericKey === removedIndex) continue;
+      const nextKey = numericKey > removedIndex ? numericKey - 1 : numericKey;
+      next[nextKey] = value;
+    }
+    return next;
+  };
+
   // ── Shared report state ──────────────────────────────────
   const [context, setContext] = useState("");
   const [reportText, setReportText] = useState('');
@@ -46,8 +57,8 @@ const Index = () => {
   const [batchPhotos, setBatchPhotos] = useState<UploadedPhoto[]>([]);
   const [scannedResults, setScannedResults] = useState<ScannedPhoto[]>([]);
   const [primaryPhotoIndex, setPrimaryPhotoIndex] = useState(0);
-  const [excludedStudentIds, setExcludedStudentIds] = useState<Set<string>>(new Set());
-  const [manuallyAddedStudents, setManuallyAddedStudents] = useState<TaggedChild[]>([]);
+  const [excludedStudentIdsByPhoto, setExcludedStudentIdsByPhoto] = useState<Record<number, string[]>>({});
+  const [manuallyAddedStudentsByPhoto, setManuallyAddedStudentsByPhoto] = useState<Record<number, TaggedChild[]>>({});
 
   // ── Legacy single-photo state (fallback) ─────────────────
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
@@ -56,29 +67,45 @@ const Index = () => {
 
   const isBatchMode = batchPhotos.length > 0;
 
-  // ── Consolidated students from all scanned photos ────────
-  const consolidatedTags = useMemo(() => {
+  const dedupeTags = useCallback((tags: TaggedChild[]) => {
     const tagMap = new Map<string, TaggedChild>();
-    for (const sp of scannedResults) {
-      for (const child of sp.taggedChildren) {
-        const existing = tagMap.get(child.id);
-        if (!existing || child.confidence > existing.confidence) {
-          tagMap.set(child.id, child);
-        }
-      }
-    }
-    // Include manually added students
-    for (const child of manuallyAddedStudents) {
-      if (!tagMap.has(child.id)) {
+    for (const child of tags) {
+      const existing = tagMap.get(child.id);
+      if (!existing || child.confidence > existing.confidence) {
         tagMap.set(child.id, child);
       }
     }
     return Array.from(tagMap.values());
-  }, [scannedResults, manuallyAddedStudents]);
+  }, []);
 
-  const activeStudents = useMemo(
-    () => consolidatedTags.filter(t => !excludedStudentIds.has(t.id)),
-    [consolidatedTags, excludedStudentIds],
+  const photoTagsByIndex = useMemo(() => {
+    const tagsByIndex: Record<number, TaggedChild[]> = {};
+    for (let i = 0; i < batchPhotos.length; i++) {
+      const scanTags = scannedResults[i]?.taggedChildren ?? [];
+      const manualTags = manuallyAddedStudentsByPhoto[i] ?? [];
+      tagsByIndex[i] = dedupeTags([...scanTags, ...manualTags]);
+    }
+    return tagsByIndex;
+  }, [batchPhotos.length, dedupeTags, manuallyAddedStudentsByPhoto, scannedResults]);
+
+  // ── Batch-wide totals across all photos ───────────────────
+  const totalUniqueTags = useMemo(() => {
+    return dedupeTags(Object.values(photoTagsByIndex).flat());
+  }, [dedupeTags, photoTagsByIndex]);
+
+  // ── Students for currently selected photo ────────────────
+  const currentPhotoTags = useMemo(() => {
+    return photoTagsByIndex[primaryPhotoIndex] ?? [];
+  }, [photoTagsByIndex, primaryPhotoIndex]);
+
+  const currentExcludedStudentIds = useMemo(
+    () => new Set(excludedStudentIdsByPhoto[primaryPhotoIndex] ?? []),
+    [excludedStudentIdsByPhoto, primaryPhotoIndex],
+  );
+
+  const activeStudentsForPrimaryPhoto = useMemo(
+    () => currentPhotoTags.filter(t => !currentExcludedStudentIds.has(t.id)),
+    [currentPhotoTags, currentExcludedStudentIds],
   );
 
   // ── Derived values for generate ──────────────────────────
@@ -88,7 +115,7 @@ const Index = () => {
   const activePreview = isBatchMode
     ? batchPhotos[primaryPhotoIndex]?.preview ?? null
     : selectedImage;
-  const activeChildren = isBatchMode ? activeStudents : taggedChildren;
+  const activeChildren = isBatchMode ? activeStudentsForPrimaryPhoto : taggedChildren;
   const childNames = activeChildren.map(c => c.name).join(', ');
 
   // ── Handlers ─────────────────────────────────────────────
@@ -108,8 +135,8 @@ const Index = () => {
     setBatchPhotos([]);
     setScannedResults([]);
     setPrimaryPhotoIndex(0);
-    setExcludedStudentIds(new Set());
-    setManuallyAddedStudents([]);
+    setExcludedStudentIdsByPhoto({});
+    setManuallyAddedStudentsByPhoto({});
     // Clear legacy
     setSelectedImage(null);
     setImageFile(null);
@@ -125,8 +152,8 @@ const Index = () => {
     setBatchPhotos(photos);
     setScannedResults([]);
     setPrimaryPhotoIndex(0);
-    setExcludedStudentIds(new Set());
-    setManuallyAddedStudents([]);
+    setExcludedStudentIdsByPhoto({});
+    setManuallyAddedStudentsByPhoto({});
     // Clear legacy single-photo state
     setSelectedImage(null);
     setImageFile(null);
@@ -143,6 +170,8 @@ const Index = () => {
   const handleRemovePhoto = useCallback((index: number) => {
     setBatchPhotos(prev => prev.filter((_, i) => i !== index));
     setScannedResults(prev => prev.filter((_, i) => i !== index));
+    setExcludedStudentIdsByPhoto(prev => shiftPhotoIndexedRecord(prev, index));
+    setManuallyAddedStudentsByPhoto(prev => shiftPhotoIndexedRecord(prev, index));
     setPrimaryPhotoIndex(prev => {
       if (prev > index) return prev - 1;
       if (prev === index) return 0;
@@ -155,26 +184,48 @@ const Index = () => {
   }, []);
 
   const handleToggleStudent = useCallback((childId: string) => {
-    setExcludedStudentIds(prev => {
-      const next = new Set(prev);
-      if (next.has(childId)) next.delete(childId);
-      else next.add(childId);
+    setExcludedStudentIdsByPhoto(prev => {
+      const current = new Set(prev[primaryPhotoIndex] ?? []);
+      if (current.has(childId)) current.delete(childId);
+      else current.add(childId);
+
+      const next = { ...prev };
+      const updated = Array.from(current);
+      if (updated.length === 0) {
+        delete next[primaryPhotoIndex];
+      } else {
+        next[primaryPhotoIndex] = updated;
+      }
       return next;
     });
-  }, []);
+  }, [primaryPhotoIndex]);
 
   const handleManualAddStudent = useCallback((child: TaggedChild) => {
-    setManuallyAddedStudents(prev => {
-      if (prev.some(c => c.id === child.id)) return prev;
-      return [...prev, child];
+    setManuallyAddedStudentsByPhoto(prev => {
+      const existing = prev[primaryPhotoIndex] ?? [];
+      if (existing.some(c => c.id === child.id)) return prev;
+
+      return {
+        ...prev,
+        [primaryPhotoIndex]: [...existing, child],
+      };
     });
+
     // Make sure it's not excluded
-    setExcludedStudentIds(prev => {
-      const next = new Set(prev);
-      next.delete(child.id);
+    setExcludedStudentIdsByPhoto(prev => {
+      const current = new Set(prev[primaryPhotoIndex] ?? []);
+      current.delete(child.id);
+
+      const next = { ...prev };
+      const updated = Array.from(current);
+      if (updated.length === 0) {
+        delete next[primaryPhotoIndex];
+      } else {
+        next[primaryPhotoIndex] = updated;
+      }
       return next;
     });
-  }, []);
+  }, [primaryPhotoIndex]);
 
   const handleGenerate = useCallback(async () => {
     if (!activeFile || activeChildren.length === 0) return;
@@ -271,10 +322,12 @@ const Index = () => {
                   onSetPrimary={setPrimaryPhotoIndex}
                   onAddMore={handleAddMorePhotos}
                   onRemovePhoto={handleRemovePhoto}
-                  consolidatedTags={consolidatedTags}
-                  excludedStudentIds={excludedStudentIds}
+                  currentPhotoTags={currentPhotoTags}
+                  photoTagsByIndex={photoTagsByIndex}
+                  excludedStudentIds={currentExcludedStudentIds}
                   onToggleStudent={handleToggleStudent}
                   onManualAdd={handleManualAddStudent}
+                  totalUniqueFound={totalUniqueTags.length}
                   onClearAll={handleClearAll}
                 />
               ) : (
