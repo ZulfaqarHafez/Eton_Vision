@@ -11,10 +11,15 @@ import { useFaceDetection } from '@/frontend/hooks/useFaceDetection';
 import { getFaceCanvas } from '@/frontend/lib/faceUtils';
 import { toast } from 'sonner';
 
-type ScanState = 'IDLE' | 'FRONT' | 'LEFT' | 'RIGHT' | 'DONE';
+type ScanAngle = 'FRONT' | 'LEFT' | 'RIGHT' | 'TOP_DOWN' | 'DEEP_PROFILE' | 'BACK';
+type ScanState = 'IDLE' | ScanAngle | 'DONE';
+
+type FullDetection = faceapi.WithFaceDescriptor<
+  faceapi.WithFaceLandmarks<{ detection: faceapi.FaceDetection }>
+>;
 
 interface CapturedAngle {
-  descriptor: number[];
+  descriptor: number[] | null;
   image_url: string;
 }
 
@@ -33,32 +38,68 @@ function clampToUnit(value: number) {
   return Math.max(0, Math.min(1, value));
 }
 
+const SCAN_SEQUENCE: ScanAngle[] = ['FRONT', 'LEFT', 'RIGHT', 'TOP_DOWN', 'DEEP_PROFILE', 'BACK'];
+
 const THRESHOLDS = {
   FRONT: { min: 2.2, max: 2.6 },
   LEFT: 1.2,
   RIGHT: 12.8,
+  TOP_DOWN: 1.05,
+  DEEP_PROFILE: { minLeft: 0.8, minRight: 16.0 },
 };
 
-const STEP_LABELS: Record<ScanState, string> = {
-  IDLE: '',
-  FRONT: 'Look straight at the camera',
-  LEFT: 'Turn your head slightly to the right',
-  RIGHT: 'Turn your head slightly to the left',
-  DONE: 'All angles captured!',
+const ANGLE_DETAILS: Record<ScanAngle, { label: string; instruction: string; target: string }> = {
+  FRONT: {
+    label: 'Front',
+    instruction: 'Look straight at the camera',
+    target: `${THRESHOLDS.FRONT.min} - ${THRESHOLDS.FRONT.max}`,
+  },
+  LEFT: {
+    label: 'Left 3/4',
+    instruction: 'Turn your head slightly to the right',
+    target: `< ${THRESHOLDS.LEFT}`,
+  },
+  RIGHT: {
+    label: 'Right 3/4',
+    instruction: 'Turn your head slightly to the left',
+    target: `> ${THRESHOLDS.RIGHT}`,
+  },
+  TOP_DOWN: {
+    label: 'Top-down',
+    instruction: 'Tilt your head downward so your forehead is more visible',
+    target: `pitch > ${THRESHOLDS.TOP_DOWN}`,
+  },
+  DEEP_PROFILE: {
+    label: 'Deep profile',
+    instruction: 'Turn further to either side for a stronger profile view',
+    target: `< ${THRESHOLDS.DEEP_PROFILE.minLeft} or > ${THRESHOLDS.DEEP_PROFILE.minRight}`,
+  },
+  BACK: {
+    label: 'Back of head',
+    instruction: 'Turn away and take one reference capture of the back of head',
+    target: 'manual capture',
+  },
 };
 
-const STEP_PROGRESS: Record<ScanState, number> = {
-  IDLE: 0,
-  FRONT: 33,
-  LEFT: 66,
-  RIGHT: 100,
-  DONE: 100,
-};
+function getNextState(current: ScanAngle): ScanState {
+  const idx = SCAN_SEQUENCE.indexOf(current);
+  if (idx === -1 || idx === SCAN_SEQUENCE.length - 1) return 'DONE';
+  return SCAN_SEQUENCE[idx + 1];
+}
 
-function getNextState(current: ScanState): ScanState {
-  if (current === 'FRONT') return 'LEFT';
-  if (current === 'LEFT') return 'RIGHT';
-  return 'DONE';
+function getStepProgress(current: ScanState): number {
+  if (current === 'IDLE') return 0;
+  if (current === 'DONE') return 100;
+
+  const stepIndex = SCAN_SEQUENCE.indexOf(current);
+  if (stepIndex === -1) return 0;
+
+  return Math.round(((stepIndex + 1) / SCAN_SEQUENCE.length) * 100);
+}
+
+function averageY(points: faceapi.Point[]): number {
+  if (points.length === 0) return 0;
+  return points.reduce((sum, point) => sum + point.y, 0) / points.length;
 }
 
 export function LiveScanEnrolment({ onSuccess }: LiveScanEnrolmentProps) {
@@ -69,13 +110,33 @@ export function LiveScanEnrolment({ onSuccess }: LiveScanEnrolmentProps) {
   const [name, setName] = useState('');
   const [classGroup, setClassGroup] = useState('');
   const [capturedData, setCapturedData] = useState<Record<string, CapturedAngle>>({});
-  const [telemetry, setTelemetry] = useState({ score: 0, ratio: 0, detected: false });
+  const [telemetry, setTelemetry] = useState({ score: 0, ratio: 0, pitch: 0, detected: false });
   const [liveThumbnail, setLiveThumbnail] = useState<string | null>(null);
   const [liveFaceBox, setLiveFaceBox] = useState<NormalizedFaceBox | null>(null);
-  const [lastDetection, setLastDetection] = useState<faceapi.WithFaceDescriptor<faceapi.WithFaceLandmarks<{ detection: faceapi.FaceDetection }>> | null>(null);
+  const [lastDetection, setLastDetection] = useState<FullDetection | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const isScanning = currentState !== 'IDLE' && currentState !== 'DONE';
+  const capturedAngles = SCAN_SEQUENCE.filter((angle) => Boolean(capturedData[angle]));
+  const coverageProgress = Math.round((capturedAngles.length / SCAN_SEQUENCE.length) * 100);
+  const descriptorCount = SCAN_SEQUENCE.filter((angle) => Boolean(capturedData[angle]?.descriptor)).length;
+  const currentAngle = currentState !== 'IDLE' && currentState !== 'DONE' ? currentState : null;
+  const currentAngleDetails = currentAngle ? ANGLE_DETAILS[currentAngle] : null;
+
+  const captureVideoFrame = useCallback(() => {
+    const video = videoRef.current;
+    if (!video || !video.videoWidth || !video.videoHeight) return null;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL('image/jpeg', 0.92);
+  }, []);
 
   // Initialize / teardown webcam
   useEffect(() => {
@@ -98,15 +159,29 @@ export function LiveScanEnrolment({ onSuccess }: LiveScanEnrolmentProps) {
   }, [modelsLoaded, isScanning]);
 
   const saveAngle = useCallback(
-    (angle: ScanState, detection: NonNullable<typeof lastDetection>) => {
-      const thumbnail = getFaceCanvas(videoRef.current!, detection.detection.box);
+    (angle: ScanAngle, detection: FullDetection | null) => {
+      if (!videoRef.current) return;
+
+      const thumbnail = detection
+        ? getFaceCanvas(videoRef.current, detection.detection.box)
+        : captureVideoFrame();
+
+      if (!thumbnail) {
+        toast.error('Could not capture this angle. Please try again.');
+        return;
+      }
+
       setCapturedData((prev) => ({
         ...prev,
-        [angle]: { descriptor: Array.from(detection.descriptor), image_url: thumbnail },
+        [angle]: {
+          descriptor: detection ? Array.from(detection.descriptor) : null,
+          image_url: thumbnail,
+        },
       }));
+
       setCurrentState(getNextState(angle));
     },
-    []
+    [captureVideoFrame]
   );
 
   // Detection loop
@@ -118,19 +193,30 @@ export function LiveScanEnrolment({ onSuccess }: LiveScanEnrolmentProps) {
 
         const detection = await getFullDetection(videoRef.current);
         if (!detection) {
-          setTelemetry({ score: 0, ratio: 0, detected: false });
+          setTelemetry({ score: 0, ratio: 0, pitch: 0, detected: false });
+          setLastDetection(null);
           setLiveThumbnail(null);
           setLiveFaceBox(null);
           return;
         }
 
         const landmarks = detection.landmarks;
-        const nose = landmarks.getNose()[0];
-        const leftEye = landmarks.getLeftEye()[0];
-        const rightEye = landmarks.getRightEye()[0];
-        const ratio = (nose.x - leftEye.x) / (rightEye.x - nose.x);
+        const nosePoints = landmarks.getNose();
+        const noseTip = nosePoints[Math.floor(nosePoints.length / 2)] ?? nosePoints[0];
+        const leftEye = landmarks.getLeftEye();
+        const rightEye = landmarks.getRightEye();
+        const mouth = landmarks.getMouth();
 
-        setTelemetry({ score: detection.detection.score, ratio, detected: true });
+        const leftEyeAnchor = leftEye[0] ?? noseTip;
+        const rightEyeAnchor = rightEye[0] ?? noseTip;
+        const yawDenominator = Math.max(0.001, rightEyeAnchor.x - noseTip.x);
+        const ratio = (noseTip.x - leftEyeAnchor.x) / yawDenominator;
+
+        const eyeCenterY = (averageY(leftEye) + averageY(rightEye)) / 2;
+        const mouthCenterY = averageY(mouth);
+        const pitch = (noseTip.y - eyeCenterY) / Math.max(1, mouthCenterY - noseTip.y);
+
+        setTelemetry({ score: detection.detection.score, ratio, pitch, detected: true });
         setLastDetection(detection);
 
         const videoWidth = videoRef.current.videoWidth || 640;
@@ -153,6 +239,13 @@ export function LiveScanEnrolment({ onSuccess }: LiveScanEnrolmentProps) {
           saveAngle('LEFT', detection);
         } else if (currentState === 'RIGHT' && ratio > THRESHOLDS.RIGHT) {
           saveAngle('RIGHT', detection);
+        } else if (currentState === 'TOP_DOWN' && pitch > THRESHOLDS.TOP_DOWN) {
+          saveAngle('TOP_DOWN', detection);
+        } else if (
+          currentState === 'DEEP_PROFILE' &&
+          (ratio < THRESHOLDS.DEEP_PROFILE.minLeft || ratio > THRESHOLDS.DEEP_PROFILE.minRight)
+        ) {
+          saveAngle('DEEP_PROFILE', detection);
         }
       }, 200);
     }
@@ -160,12 +253,35 @@ export function LiveScanEnrolment({ onSuccess }: LiveScanEnrolmentProps) {
   }, [modelsLoaded, isScanning, currentState, getFullDetection, saveAngle]);
 
   const handleManualSnap = () => {
-    if (lastDetection && isScanning) {
+    if (!isScanning || currentState === 'IDLE' || currentState === 'DONE') return;
+
+    if (currentState === 'BACK') {
+      saveAngle('BACK', lastDetection);
+      return;
+    }
+
+    if (lastDetection) {
       saveAngle(currentState, lastDetection);
     }
   };
 
   const handleFinalSubmit = async () => {
+    const signatures = SCAN_SEQUENCE.flatMap((angle) => {
+      const capture = capturedData[angle];
+      if (!capture?.descriptor) return [];
+
+      return [{
+        embedding: capture.descriptor,
+        image_url: capture.image_url,
+        angle_label: angle,
+      }];
+    });
+
+    if (signatures.length === 0) {
+      toast.error('No face descriptors captured. Please run the scan again.');
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       const { data: child, error: cErr } = await supabase
@@ -176,23 +292,24 @@ export function LiveScanEnrolment({ onSuccess }: LiveScanEnrolmentProps) {
 
       if (cErr) throw cErr;
 
-      const signatures = Object.keys(capturedData).map((angle) => ({
+      const signatureRows = signatures.map((signature) => ({
         child_id: child.id,
-        embedding: capturedData[angle].descriptor,
-        image_url: capturedData[angle].image_url,
-        angle_label: angle,
+        embedding: signature.embedding,
+        image_url: signature.image_url,
+        angle_label: signature.angle_label,
       }));
 
-      const { error: sErr } = await supabase.from('face_signatures').insert(signatures);
+      const { error: sErr } = await supabase.from('face_signatures').insert(signatureRows);
       if (sErr) throw sErr;
 
-      toast.success(`${name} enrolled with 3D face profile!`);
+      toast.success(`${name} enrolled with ${signatureRows.length} angle descriptors`);
       setCurrentState('IDLE');
       setName('');
       setClassGroup('');
       setCapturedData({});
       setLiveThumbnail(null);
       setLiveFaceBox(null);
+      setLastDetection(null);
       onSuccess?.();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Enrolment failed');
@@ -206,7 +323,8 @@ export function LiveScanEnrolment({ onSuccess }: LiveScanEnrolmentProps) {
     setCapturedData({});
     setLiveThumbnail(null);
     setLiveFaceBox(null);
-    setTelemetry({ score: 0, ratio: 0, detected: false });
+    setTelemetry({ score: 0, ratio: 0, pitch: 0, detected: false });
+    setLastDetection(null);
   };
 
   // --- IDLE: Name + Class input ---
@@ -234,10 +352,10 @@ export function LiveScanEnrolment({ onSuccess }: LiveScanEnrolmentProps) {
         <Button
           className="w-full"
           disabled={!name.trim() || !classGroup.trim() || !modelsLoaded}
-          onClick={() => setCurrentState('FRONT')}
+          onClick={() => setCurrentState(SCAN_SEQUENCE[0])}
         >
           <Camera className="w-4 h-4 mr-2" />
-          Start 3D Face Scan
+          Start Multi-Angle Face Scan
         </Button>
         {!modelsLoaded && (
           <p className="text-xs text-muted-foreground text-center flex items-center justify-center gap-1.5">
@@ -255,11 +373,36 @@ export function LiveScanEnrolment({ onSuccess }: LiveScanEnrolmentProps) {
       <div className="space-y-5">
         <div className="flex items-center gap-2 text-green-600">
           <CheckCircle2 className="w-5 h-5" />
-          <span className="text-sm font-semibold">3D Face Mapping Complete</span>
+          <span className="text-sm font-semibold">Multi-Angle Face Mapping Complete</span>
+        </div>
+
+        <div className="rounded-lg border border-border bg-secondary/40 p-3 space-y-2">
+          <div className="flex items-center justify-between text-xs">
+            <span className="font-semibold text-foreground">Angle coverage</span>
+            <span className="text-muted-foreground">{capturedAngles.length}/{SCAN_SEQUENCE.length} captured</span>
+          </div>
+          <Progress value={coverageProgress} className="h-1.5" />
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+            {SCAN_SEQUENCE.map((angle) => {
+              const isCaptured = Boolean(capturedData[angle]);
+              return (
+                <div
+                  key={angle}
+                  className={`rounded-md border px-2 py-1 text-[10px] font-semibold ${
+                    isCaptured
+                      ? 'border-green-300 bg-green-50 text-green-800'
+                      : 'border-border bg-background text-muted-foreground'
+                  }`}
+                >
+                  {ANGLE_DETAILS[angle].label}
+                </div>
+              );
+            })}
+          </div>
         </div>
 
         <div className="flex justify-center gap-3">
-          {(['FRONT', 'LEFT', 'RIGHT'] as const).map((angle) =>
+          {SCAN_SEQUENCE.map((angle) =>
             capturedData[angle] ? (
               <div key={angle} className="text-center">
                 <img
@@ -267,7 +410,9 @@ export function LiveScanEnrolment({ onSuccess }: LiveScanEnrolmentProps) {
                   alt={angle}
                   className="w-20 h-20 rounded-lg object-cover border-2 border-green-200"
                 />
-                <p className="text-[11px] font-semibold text-muted-foreground mt-1">{angle}</p>
+                <p className="text-[11px] font-semibold text-muted-foreground mt-1">
+                  {ANGLE_DETAILS[angle].label}
+                </p>
               </div>
             ) : null
           )}
@@ -276,6 +421,10 @@ export function LiveScanEnrolment({ onSuccess }: LiveScanEnrolmentProps) {
         <div className="text-sm text-muted-foreground text-center">
           Enrolling <span className="font-semibold text-foreground">{name}</span> in{' '}
           <span className="font-semibold text-foreground">{classGroup}</span>
+        </div>
+
+        <div className="text-xs text-muted-foreground text-center">
+          {descriptorCount} angle descriptor{descriptorCount !== 1 ? 's' : ''} will be saved to recognition data.
         </div>
 
         <div className="flex gap-2">
@@ -305,16 +454,48 @@ export function LiveScanEnrolment({ onSuccess }: LiveScanEnrolmentProps) {
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <Badge variant="secondary" className="text-xs">
-            Step: {currentState}
+            Step: {currentAngleDetails?.label} ({capturedAngles.length + 1}/{SCAN_SEQUENCE.length})
           </Badge>
           <button onClick={handleReset} className="text-xs text-muted-foreground hover:underline">
             Cancel
           </button>
         </div>
-        <Progress value={STEP_PROGRESS[currentState]} className="h-1.5" />
+        <Progress value={getStepProgress(currentState)} className="h-1.5" />
         <p className="text-sm text-center font-medium text-foreground">
-          {STEP_LABELS[currentState]}
+          {currentAngleDetails?.instruction}
         </p>
+
+        <div className="rounded-lg border border-border bg-secondary/30 p-2 space-y-2">
+          <div className="flex items-center justify-between text-[10px]">
+            <span className="font-semibold text-foreground">Angle coverage</span>
+            <span className="text-muted-foreground">{capturedAngles.length}/{SCAN_SEQUENCE.length} captured</span>
+          </div>
+          <Progress value={coverageProgress} className="h-1" />
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+            {SCAN_SEQUENCE.map((angle) => {
+              const isCaptured = Boolean(capturedData[angle]);
+              const isCurrent = currentState === angle;
+
+              return (
+                <div
+                  key={angle}
+                  className={`rounded-md border px-2 py-1.5 text-[10px] ${
+                    isCaptured
+                      ? 'border-green-300 bg-green-50 text-green-800'
+                      : isCurrent
+                        ? 'border-primary/40 bg-primary/10 text-primary font-semibold'
+                        : 'border-border bg-background text-muted-foreground'
+                  }`}
+                >
+                  <div className="font-semibold leading-none">{ANGLE_DETAILS[angle].label}</div>
+                  <div className="leading-none mt-1 opacity-80">
+                    {isCaptured ? 'Captured' : isCurrent ? 'Current' : 'Pending'}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
       </div>
 
       {/* Video + Thumbnail side by side */}
@@ -362,11 +543,16 @@ export function LiveScanEnrolment({ onSuccess }: LiveScanEnrolmentProps) {
           </div>
 
           <div>
+            <p className="text-[10px] text-muted-foreground">Pitch</p>
+            <p className="text-lg font-bold font-mono text-primary">
+              {telemetry.detected ? telemetry.pitch.toFixed(2) : '—'}
+            </p>
+          </div>
+
+          <div>
             <p className="text-[10px] text-muted-foreground">Target</p>
             <p className="text-[11px] font-mono text-foreground/70">
-              {currentState === 'FRONT' && `${THRESHOLDS.FRONT.min} – ${THRESHOLDS.FRONT.max}`}
-              {currentState === 'LEFT' && `< ${THRESHOLDS.LEFT}`}
-              {currentState === 'RIGHT' && `> ${THRESHOLDS.RIGHT}`}
+              {currentAngleDetails?.target}
             </p>
           </div>
 
@@ -385,10 +571,10 @@ export function LiveScanEnrolment({ onSuccess }: LiveScanEnrolmentProps) {
             variant="outline"
             size="sm"
             className="w-full text-[11px] h-7"
-            disabled={!telemetry.detected}
+            disabled={currentState !== 'BACK' && !telemetry.detected}
             onClick={handleManualSnap}
           >
-            Manual Snap
+            {currentState === 'BACK' ? 'Capture Back Shot' : 'Manual Snap'}
           </Button>
         </div>
       </div>
@@ -396,14 +582,14 @@ export function LiveScanEnrolment({ onSuccess }: LiveScanEnrolmentProps) {
       {/* Captured angles so far */}
       {Object.keys(capturedData).length > 0 && (
         <div className="flex gap-2 justify-center">
-          {Object.entries(capturedData).map(([angle, data]) => (
+          {SCAN_SEQUENCE.filter((angle) => Boolean(capturedData[angle])).map((angle) => (
             <div key={angle} className="text-center">
               <img
-                src={data.image_url}
+                src={capturedData[angle].image_url}
                 alt={angle}
                 className="w-12 h-12 rounded-md object-cover border-2 border-green-300"
               />
-              <p className="text-[9px] font-semibold text-green-600 mt-0.5">{angle}</p>
+              <p className="text-[9px] font-semibold text-green-600 mt-0.5">{ANGLE_DETAILS[angle].label}</p>
             </div>
           ))}
         </div>
