@@ -357,12 +357,15 @@ export function ObservationReport({ report, isStreaming, childName, taggedChildr
         </motion.div>
       )}
 
-      {/* Fallback */}
-      {!hasAnySections && isStreaming && (
+      {/* Fallback for unstructured provider output */}
+      {!hasAnySections && report.raw.trim().length > 0 && (
         <div className="px-6 py-5">
+          <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground mb-2">
+            Raw Report Output
+          </p>
           <p className="text-sm leading-7 text-foreground whitespace-pre-wrap">
             {report.raw}
-            <StreamingCursor />
+            {isStreaming && <StreamingCursor />}
           </p>
         </div>
       )}

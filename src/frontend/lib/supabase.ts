@@ -128,6 +128,49 @@ export async function fetchPublishedReports(): Promise<PublishedReport[]> {
   return (data as PublishedReport[]) ?? [];
 }
 
+export async function fetchRecentReportsForStudent(
+  studentName: string,
+  classGroup?: string,
+  limit = 3,
+): Promise<PublishedReport[]> {
+  const normalizedName = studentName.trim();
+  if (!normalizedName) return [];
+
+  const normalizedClass = classGroup?.trim();
+
+  if (normalizedClass) {
+    const { data, error } = await supabase
+      .from('published_reports')
+      .select('*')
+      .ilike('student_name', normalizedName)
+      .eq('class_group', normalizedClass)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    if (!error && data && data.length > 0) {
+      return data as PublishedReport[];
+    }
+
+    if (error) {
+      console.warn('Fetch recent reports with class group failed, falling back to name-only lookup:', error);
+    }
+  }
+
+  const { data, error } = await supabase
+    .from('published_reports')
+    .select('*')
+    .ilike('student_name', normalizedName)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    console.error('Fetch recent reports error:', error);
+    return [];
+  }
+
+  return (data as PublishedReport[]) ?? [];
+}
+
 export async function deletePublishedReport(id: string): Promise<void> {
   const { error } = await supabase
     .from('published_reports')

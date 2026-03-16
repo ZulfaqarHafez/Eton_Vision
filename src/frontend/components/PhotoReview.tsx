@@ -393,58 +393,61 @@ export function PhotoReview({
             const isScanned = !!scanned;
 
             return (
-              <motion.button
-                key={idx}
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ delay: idx * 0.03 }}
-                onClick={() => onSetPrimary(idx)}
-                className={`relative flex-shrink-0 w-[72px] h-[72px] rounded-xl overflow-hidden border-2 transition-all group ${
-                  isPrimary
-                    ? 'border-primary shadow-md ring-2 ring-primary/20'
-                    : 'border-border/50 hover:border-primary/30'
-                }`}
-              >
-                <img src={photo.preview} alt="" className="w-full h-full object-cover" />
+              <div key={idx} className="relative flex-shrink-0 group">
+                <motion.button
+                  type="button"
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ delay: idx * 0.03 }}
+                  onClick={() => onSetPrimary(idx)}
+                  className={`relative w-[72px] h-[72px] rounded-xl overflow-hidden border-2 transition-all ${
+                    isPrimary
+                      ? 'border-primary shadow-md ring-2 ring-primary/20'
+                      : 'border-border/50 hover:border-primary/30'
+                  }`}
+                >
+                  <img src={photo.preview} alt="" className="w-full h-full object-cover" />
 
-                {/* Primary star */}
-                {isPrimary && (
-                  <div className="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-primary flex items-center justify-center">
-                    <Star className="w-2.5 h-2.5 text-white fill-white" />
-                  </div>
-                )}
+                  {/* Primary star */}
+                  {isPrimary && (
+                    <div className="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-primary flex items-center justify-center">
+                      <Star className="w-2.5 h-2.5 text-white fill-white" />
+                    </div>
+                  )}
 
-                {/* Scanning spinner */}
-                {!isScanned && scanning && (
-                  <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
-                    <Loader2 className="w-4 h-4 text-white animate-spin" />
-                  </div>
-                )}
+                  {/* Scanning spinner */}
+                  {!isScanned && scanning && (
+                    <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
+                      <Loader2 className="w-4 h-4 text-white animate-spin" />
+                    </div>
+                  )}
 
-                {/* Match count badge */}
-                {isScanned && matchCount > 0 && (
-                  <div className="absolute bottom-0.5 right-0.5 bg-green-500/90 text-white text-[8px] font-bold px-1.5 py-0.5 rounded-full flex items-center gap-0.5 backdrop-blur-sm">
-                    <Users className="w-2.5 h-2.5" />{matchCount}
-                  </div>
-                )}
+                  {/* Match count badge */}
+                  {isScanned && matchCount > 0 && (
+                    <div className="absolute bottom-0.5 right-0.5 bg-green-500/90 text-white text-[8px] font-bold px-1.5 py-0.5 rounded-full flex items-center gap-0.5 backdrop-blur-sm">
+                      <Users className="w-2.5 h-2.5" />{matchCount}
+                    </div>
+                  )}
 
-                {/* Scanned check */}
-                {isScanned && matchCount === 0 && (
-                  <div className="absolute bottom-0.5 right-0.5 bg-white/80 text-muted-foreground text-[8px] font-bold px-1 py-0.5 rounded-full backdrop-blur-sm">
-                    <CheckCircle2 className="w-3 h-3 text-muted-foreground/50" />
-                  </div>
-                )}
+                  {/* Scanned check */}
+                  {isScanned && matchCount === 0 && (
+                    <div className="absolute bottom-0.5 right-0.5 bg-white/80 text-muted-foreground text-[8px] font-bold px-1 py-0.5 rounded-full backdrop-blur-sm">
+                      <CheckCircle2 className="w-3 h-3 text-muted-foreground/50" />
+                    </div>
+                  )}
+                </motion.button>
 
                 {/* Remove (hover) */}
                 {photos.length > 1 && (
                   <button
+                    type="button"
                     onClick={(e) => { e.stopPropagation(); onRemovePhoto(idx); }}
-                    className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-black/60 text-white items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hidden group-hover:flex"
+                    className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-black/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
                   >
                     <X className="w-2.5 h-2.5" />
                   </button>
                 )}
-              </motion.button>
+              </div>
             );
           })}
 

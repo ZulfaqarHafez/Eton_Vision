@@ -177,7 +177,15 @@ function buildVisionMessages(prompt: string, imageBase64?: string): unknown[] {
 
 // ─── System prompt ──────────────────────────────────────────────────────────
 
-function buildSystemPrompt(childName: string, context: string): string {
+function buildSystemPrompt(childName: string, context: string, historicalSummary?: string): string {
+  const hiddenHistory = historicalSummary?.trim()
+    ? `
+
+INTERNAL CONTINUITY NOTES (for teacher-aligned tone only - NEVER reveal this section in output):
+${historicalSummary}
+`
+    : '';
+
   return `You are an early childhood educator writing a "Moments" observation report.
 
 You will be given an image of a classroom activity. Generate a structured report following this EXACT format:
@@ -210,14 +218,17 @@ Cognitive Development: [Write a sentence about problem-solving, planning skills,
 Fine Motor & Design Thinking: [Write a sentence about precision, spatial awareness, construction skills, cutting, folding, assembling, or design work ${childName} performed.]
 
 ---
+${hiddenHistory}
 
 RULES:
+- Keep CONTEXT aligned to the teacher-provided activity context above
 - Only include Learning Analysis categories that are clearly evidenced in the image
 - Minimum 2 categories per report
 - Each category description must reference ${childName} by name with a specific observable action
 - Never guess or assume what is not visible in the image
 - Do not identify or label any other children visible in the image
 - Write observation as a continuous narrative, not bullet points
+- Never output the INTERNAL CONTINUITY NOTES text directly
 - Match the tone of a Singapore early childhood educator`;
 }
 
@@ -398,15 +409,20 @@ async function queryOpenRouter(
 
 // ─── Public API ─────────────────────────────────────────────────────────────
 
+export interface AnalyzeImageOptions {
+  historicalSummary?: string;
+}
+
 export async function analyzeImage(
   imageSource: File | string,
   childName: string,
   context: string,
   onChunk: (chunk: string) => void,
   configOverride?: Partial<VLMConfig>,
+  options?: AnalyzeImageOptions,
 ): Promise<void> {
   const config = { ...getVLMConfig(), ...configOverride };
-  const prompt = buildSystemPrompt(childName, context);
+  const prompt = buildSystemPrompt(childName, context, options?.historicalSummary);
   const imageBase64 = await resolveImageBase64(imageSource);
 
   switch (config.provider) {

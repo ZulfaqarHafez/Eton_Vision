@@ -74,55 +74,60 @@ export default function Feed() {
                 className="rounded-2xl border border-border bg-card overflow-hidden shadow-sm hover:shadow-md transition-shadow"
               >
                 {/* Card Header */}
-                <button
-                  onClick={() => setExpandedId(isExpanded ? null : report.id)}
-                  className="w-full text-left px-5 py-4 hover:bg-secondary/20 transition-colors min-h-[72px]"
-                >
-                  <div className="flex items-start gap-4">
-                    {/* Thumbnail — larger for easier recognition */}
-                    {report.image_url && (
-                      <img
-                        src={report.image_url}
-                        alt=""
-                        className="w-20 h-20 rounded-xl object-cover flex-shrink-0"
-                      />
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <h3 className="text-base font-bold text-foreground truncate">{report.title}</h3>
-                      <div className="flex flex-wrap items-center gap-2 mt-1.5">
-                        <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                          <User className="w-4 h-4" />
-                          {report.student_name}
-                        </span>
-                        {report.class_group && (
-                          <span className="px-2 py-0.5 rounded-lg bg-accent/10 text-accent text-xs font-semibold">
-                            {report.class_group}
-                          </span>
-                        )}
-                        <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                          <Calendar className="w-4 h-4" />
-                          {new Date(report.created_at).toLocaleDateString("en-GB", {
-                            day: "2-digit",
-                            month: "short",
-                            year: "numeric",
-                          })}
-                        </span>
-                      </div>
-                      {!isExpanded && report.observation && (
-                        <p className="text-sm text-muted-foreground mt-2 line-clamp-2">
-                          {report.observation}
-                        </p>
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setExpandedId(isExpanded ? null : report.id)}
+                    className="w-full text-left px-5 py-4 pr-16 hover:bg-secondary/20 transition-colors min-h-[72px]"
+                  >
+                    <div className="flex items-start gap-4">
+                      {/* Thumbnail — larger for easier recognition */}
+                      {report.image_url && (
+                        <img
+                          src={report.image_url}
+                          alt=""
+                          className="w-20 h-20 rounded-xl object-cover flex-shrink-0"
+                        />
                       )}
+                      <div className="flex-1 min-w-0">
+                        <h3 className="text-base font-bold text-foreground truncate">{report.title}</h3>
+                        <div className="flex flex-wrap items-center gap-2 mt-1.5">
+                          <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                            <User className="w-4 h-4" />
+                            {report.student_name}
+                          </span>
+                          {report.class_group && (
+                            <span className="px-2 py-0.5 rounded-lg bg-accent/10 text-accent text-xs font-semibold">
+                              {report.class_group}
+                            </span>
+                          )}
+                          <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                            <Calendar className="w-4 h-4" />
+                            {new Date(report.created_at).toLocaleDateString("en-GB", {
+                              day: "2-digit",
+                              month: "short",
+                              year: "numeric",
+                            })}
+                          </span>
+                        </div>
+                        {!isExpanded && report.observation && (
+                          <p className="text-sm text-muted-foreground mt-2 line-clamp-2">
+                            {report.observation}
+                          </p>
+                        )}
+                      </div>
                     </div>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); handleDelete(report.id); }}
-                      className="p-2 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors flex-shrink-0 self-start"
-                      title="Delete report"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </button>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); handleDelete(report.id); }}
+                    className="absolute top-4 right-4 p-2 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                    title="Delete report"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
 
                 {/* Expanded View — full Moments template */}
                 {isExpanded && (
@@ -155,10 +160,10 @@ export default function Feed() {
                           alt="Observation"
                           className="max-h-[400px] w-auto object-contain"
                         />
-                        <button className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/90 border border-border flex items-center justify-center shadow-sm">
+                        <button type="button" className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/90 border border-border flex items-center justify-center shadow-sm">
                           <ChevronLeft className="w-5 h-5 text-muted-foreground" />
                         </button>
-                        <button className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/90 border border-border flex items-center justify-center shadow-sm">
+                        <button type="button" className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/90 border border-border flex items-center justify-center shadow-sm">
                           <ChevronRight className="w-5 h-5 text-muted-foreground" />
                         </button>
                       </div>

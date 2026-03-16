@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import { Loader2, Sparkles, PenLine, RefreshCw } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
@@ -9,9 +9,12 @@ import { SettingsPanel } from "@/frontend/components/SettingsPanel";
 import { FaceTagPanel } from "@/frontend/components/FaceTagPanel";
 import { StudentList } from "@/frontend/components/StudentList";
 import { PhotoReview, type ScannedPhoto } from "@/frontend/components/PhotoReview";
-import { analyzeImage, refineReport } from "@/backend/services/vlm";
+import { analyzeImage, getVLMConfig, refineReport } from "@/backend/services/vlm";
 import { parseReport, type ParsedReport } from "@/frontend/lib/parseReport";
-import type { TaggedChild } from "@/frontend/lib/supabase";
+import {
+  fetchRecentReportsForStudent,
+  type TaggedChild,
+} from "@/frontend/lib/supabase";
 
 export type ReportStatus = 'idle' | 'loading' | 'error' | 'done';
 
@@ -27,6 +30,30 @@ function DecoStars({ className }: { className?: string }) {
       <path d="M70 6l1-2 2.1-1-2.1-1L70 0l-1 2-2.1 1 2.1 1z" fill="hsl(270,55%,70%)" opacity="0.4" />
     </svg>
   );
+}
+
+const ACTIVITY_CONTEXT_DRAFT_KEY = "eton_activity_context_draft";
+
+const CONTEXT_TEMPLATES = [
+  {
+    label: 'Habitat Build',
+    text: 'Children are collaborating to build and label mini habitats using mixed classroom materials.',
+  },
+  {
+    label: 'Story Role Play',
+    text: 'Small-group storytelling through role play, props, and turn-taking prompts from the teacher.',
+  },
+  {
+    label: 'Design Challenge',
+    text: 'Hands-on design challenge where children test, improve, and explain their creations.',
+  },
+];
+
+function isMeaningfulGeneratedOutput(text: string): boolean {
+  const normalized = text.trim();
+  if (!normalized) return false;
+  if (/^no response from model\.?$/i.test(normalized)) return false;
+  return normalized.length >= 24;
 }
 
 const Index = () => {
@@ -52,6 +79,10 @@ const Index = () => {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isRefining, setIsRefining] = useState(false);
   const [refinePrompt, setRefinePrompt] = useState("");
+  const [includeHistoryContext, setIncludeHistoryContext] = useState(true);
+  const [historyAssistNote, setHistoryAssistNote] = useState<string | null>(null);
+  const [lastGenerationFingerprint, setLastGenerationFingerprint] = useState("");
+  const generationRunRef = useRef(0);
 
   // ── Batch mode state (persists across tab switches) ──────
   const [batchPhotos, setBatchPhotos] = useState<UploadedPhoto[]>([]);
@@ -66,6 +97,17 @@ const Index = () => {
   const [taggedChildren, setTaggedChildren] = useState<TaggedChild[]>([]);
 
   const isBatchMode = batchPhotos.length > 0;
+
+  useEffect(() => {
+    const savedDraft = localStorage.getItem(ACTIVITY_CONTEXT_DRAFT_KEY);
+    if (savedDraft) {
+      setContext(savedDraft);
+    }
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem(ACTIVITY_CONTEXT_DRAFT_KEY, context);
+  }, [context]);
 
   const dedupeTags = useCallback((tags: TaggedChild[]) => {
     const tagMap = new Map<string, TaggedChild>();
@@ -117,6 +159,51 @@ const Index = () => {
     : selectedImage;
   const activeChildren = isBatchMode ? activeStudentsForPrimaryPhoto : taggedChildren;
   const childNames = activeChildren.map(c => c.name).join(', ');
+  const activityContext = context.trim() || "Classroom activity";
+
+  const activeStudentIdsKey = useMemo(
+    () => activeChildren.map((child) => child.id).sort().join('|'),
+    [activeChildren],
+  );
+
+  const activeFileKey = useMemo(() => {
+    if (!activeFile) return '';
+    return `${activeFile.name}:${activeFile.size}:${activeFile.lastModified}`;
+  }, [activeFile]);
+
+  const currentGenerationFingerprint = useMemo(
+    () => `${activityContext}__${activeStudentIdsKey}__${activeFileKey}`,
+    [activityContext, activeStudentIdsKey, activeFileKey],
+  );
+
+  const hasGenerationInputChanged = reportStatus === 'done'
+    && lastGenerationFingerprint.length > 0
+    && lastGenerationFingerprint !== currentGenerationFingerprint;
+
+  const buildHistoricalSummary = useCallback(async (): Promise<string | null> => {
+    if (!includeHistoryContext || activeChildren.length === 0) return null;
+
+    const primaryChild = activeChildren[0];
+    const recentReports = await fetchRecentReportsForStudent(
+      primaryChild.name,
+      primaryChild.class_group,
+      3,
+    );
+
+    if (recentReports.length === 0) return null;
+
+    const summaryLines = recentReports.map((item, index) => {
+      const reportDate = new Date(item.created_at).toLocaleDateString('en-GB', {
+        day: '2-digit',
+        month: 'short',
+      });
+      const sourceText = (item.observation || item.context || '').replace(/\s+/g, ' ').trim();
+      const snippet = sourceText.length > 140 ? `${sourceText.slice(0, 140)}...` : sourceText;
+      return `${index + 1}. ${reportDate}: ${snippet || 'No previous text snippet available.'}`;
+    });
+
+    return `Recent observations for ${primaryChild.name}:\n${summaryLines.join('\n')}`;
+  }, [activeChildren, includeHistoryContext]);
 
   // ── Handlers ─────────────────────────────────────────────
 
@@ -128,6 +215,8 @@ const Index = () => {
     setReportText('');
     setReportStatus('idle');
     setReportError(null);
+    setHistoryAssistNote(null);
+    setLastGenerationFingerprint('');
   }, []);
 
   const handleClearAll = useCallback(() => {
@@ -146,6 +235,8 @@ const Index = () => {
     setReportStatus('idle');
     setReportError(null);
     setRefinePrompt('');
+    setHistoryAssistNote(null);
+    setLastGenerationFingerprint('');
   }, []);
 
   const handleBatchSelect = useCallback((photos: UploadedPhoto[]) => {
@@ -161,6 +252,8 @@ const Index = () => {
     setReportText('');
     setReportStatus('idle');
     setReportError(null);
+    setHistoryAssistNote(null);
+    setLastGenerationFingerprint('');
   }, []);
 
   const handleAddMorePhotos = useCallback((newPhotos: UploadedPhoto[]) => {
@@ -228,28 +321,130 @@ const Index = () => {
   }, [primaryPhotoIndex]);
 
   const handleGenerate = useCallback(async () => {
-    if (!activeFile || activeChildren.length === 0) return;
+    if (!activeFile) {
+      setReportError('Upload a photo before generating a report.');
+      setReportStatus('error');
+      return;
+    }
+
+    if (activeChildren.length === 0) {
+      setReportError('Select at least one student in the Main Focus photo before generating.');
+      setReportStatus('error');
+      return;
+    }
+
+    const runId = generationRunRef.current + 1;
+    generationRunRef.current = runId;
 
     setReportText('');
     setReportError(null);
     setReportStatus('loading');
+    setHistoryAssistNote(null);
 
     try {
-      await analyzeImage(activeFile, childNames, context.trim() || "Classroom activity", (chunk) => {
-        setReportText((prev) => prev + chunk);
-      });
+      const config = getVLMConfig();
+      let historicalSummary: string | undefined;
+
+      if (includeHistoryContext) {
+        if (config.provider === 'colab') {
+          setHistoryAssistNote('History assist is unavailable on Colab mode. Using Activity Context only.');
+        } else {
+          const summary = await buildHistoricalSummary();
+          if (summary) {
+            historicalSummary = summary;
+            setHistoryAssistNote('Continuity notes from recent reports were applied.');
+          } else {
+            setHistoryAssistNote('No recent reports found for continuity notes. Using Activity Context only.');
+          }
+        }
+      } else {
+        setHistoryAssistNote('History assist is off. Using Activity Context only.');
+      }
+
+      const runAttempt = async (summaryOverride?: string): Promise<string> => {
+        let timeoutId: ReturnType<typeof setTimeout> | null = null;
+        let streamedText = '';
+
+        try {
+          const generationPromise = analyzeImage(
+            activeFile,
+            childNames,
+            activityContext,
+            (chunk) => {
+              if (generationRunRef.current !== runId) return;
+              streamedText += chunk;
+              setReportText((prev) => prev + chunk);
+            },
+            undefined,
+            { historicalSummary: summaryOverride },
+          );
+
+          const timeoutPromise = new Promise<never>((_, reject) => {
+            timeoutId = setTimeout(() => {
+              reject(new Error('Generation timed out after 90 seconds. Please retry or switch provider in Settings.'));
+            }, 90000);
+          });
+
+          await Promise.race([generationPromise, timeoutPromise]);
+          return streamedText;
+        } finally {
+          if (timeoutId) clearTimeout(timeoutId);
+        }
+      };
+
+      const firstOutput = await runAttempt(historicalSummary);
+
+      if (generationRunRef.current !== runId) return;
+
+      if (!isMeaningfulGeneratedOutput(firstOutput)) {
+        setReportText('');
+        setHistoryAssistNote(
+          historicalSummary
+            ? 'First response was empty. Retrying automatically without history context.'
+            : 'First response was empty. Retrying automatically...',
+        );
+
+        const retryOutput = await runAttempt(undefined);
+
+        if (generationRunRef.current !== runId) return;
+
+        if (!isMeaningfulGeneratedOutput(retryOutput)) {
+          throw new Error('Model returned an empty response. Please retry, or switch provider in Settings.');
+        }
+      }
+
+      if (generationRunRef.current !== runId) return;
+
       setReportStatus('done');
+      setLastGenerationFingerprint(currentGenerationFingerprint);
     } catch (error) {
+      if (generationRunRef.current !== runId) return;
+      generationRunRef.current = runId + 1;
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
       setReportError(errorMsg);
       setReportStatus('error');
+    } finally {
+      // No-op: per-attempt timeout cleanup is handled inside runAttempt.
     }
-  }, [activeFile, activeChildren, childNames, context]);
+  }, [
+    activeChildren.length,
+    activeFile,
+    activityContext,
+    buildHistoricalSummary,
+    childNames,
+    currentGenerationFingerprint,
+    includeHistoryContext,
+  ]);
 
   const isLoading = reportStatus === 'loading';
 
   const handleFollowUp = useCallback(async () => {
     if (!reportText || isRefining || !refinePrompt.trim()) return;
+
+    if (hasGenerationInputChanged) {
+      setReportError('Activity context or selected students changed. Generate again before refining.');
+      return;
+    }
 
     const currentReport = reportText;
     setIsRefining(true);
@@ -276,7 +471,7 @@ const Index = () => {
     } finally {
       setIsRefining(false);
     }
-  }, [reportText, isRefining, refinePrompt, childNames, activeFile]);
+  }, [reportText, isRefining, refinePrompt, childNames, activeFile, hasGenerationInputChanged]);
 
   const handleReportEdit = useCallback((updated: ParsedReport) => {
     setReportText(updated.raw);
@@ -378,9 +573,38 @@ const Index = () => {
                   onChange={(e) => setContext(e.target.value)}
                   placeholder="Describe what's happening... e.g. Children have been working with clay to create sea turtles over the past week."
                   disabled={isLoading || isRefining}
-                  rows={3}
+                  rows={4}
                   className="chat-input w-full resize-none text-sm"
                 />
+                <div className="flex items-center justify-between text-[11px] text-muted-foreground px-1">
+                  <span>{context.trim().length} characters</span>
+                  <span>Draft auto-saved</span>
+                </div>
+
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {CONTEXT_TEMPLATES.map((template) => (
+                    <button
+                      key={template.label}
+                      type="button"
+                      onClick={() => setContext(template.text)}
+                      disabled={isLoading || isRefining}
+                      className="text-[11px] px-2.5 py-1 rounded-full border border-border/70 bg-white/70 text-muted-foreground hover:text-foreground hover:border-primary/30 transition-colors disabled:opacity-50"
+                    >
+                      {template.label}
+                    </button>
+                  ))}
+                </div>
+
+                <label className="flex items-center gap-2 text-[11px] text-muted-foreground pt-1">
+                  <input
+                    type="checkbox"
+                    checked={includeHistoryContext}
+                    onChange={(e) => setIncludeHistoryContext(e.target.checked)}
+                    disabled={isLoading || isRefining}
+                    className="h-3.5 w-3.5 rounded border-border"
+                  />
+                  Use recent reports to keep continuity for the same student
+                </label>
               </div>
 
               {/* Refine — after report */}
@@ -409,52 +633,75 @@ const Index = () => {
               )}
 
               {/* Action buttons */}
-              <div className="flex flex-col gap-2.5 mt-auto pt-2">
-                {reportStatus === 'done' && (
+              <div className="sticky bottom-0 mt-auto pt-2 -mx-2 px-2 pb-1 bg-gradient-to-t from-[hsl(38,50%,97%,0.98)] via-[hsl(38,50%,97%,0.92)] to-transparent backdrop-blur-sm">
+                <div className="rounded-2xl border border-border/50 bg-white/70 p-3 space-y-2.5">
+                  {hasGenerationInputChanged && (
+                    <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-2.5 py-2">
+                      Activity context or selected students changed. Generate again to apply updates.
+                    </p>
+                  )}
+
+                  {historyAssistNote && !isLoading && (
+                    <p className="text-[11px] text-muted-foreground px-1">
+                      {historyAssistNote}
+                    </p>
+                  )}
+
+                  {reportStatus === 'done' && (
+                    <button
+                      onClick={handleFollowUp}
+                      disabled={!refinePrompt.trim() || isRefining || hasGenerationInputChanged}
+                      className="btn-primary w-full flex items-center justify-center gap-2.5 py-3.5 text-[15px] font-bold disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      {isRefining ? (
+                        <>
+                          <Loader2 className="w-4.5 h-4.5 animate-spin" />
+                          Refining...
+                        </>
+                      ) : (
+                        <>
+                          <PenLine className="w-4 h-4" />
+                          Refine Report
+                        </>
+                      )}
+                    </button>
+                  )}
+
                   <button
-                    onClick={handleFollowUp}
-                    disabled={!refinePrompt.trim() || isRefining}
-                    className="btn-primary w-full flex items-center justify-center gap-2.5 py-3.5 text-[15px] font-bold disabled:opacity-40 disabled:cursor-not-allowed"
+                    onClick={handleGenerate}
+                    disabled={!activeFile || activeChildren.length === 0 || isLoading || isRefining}
+                    className={`w-full flex items-center justify-center gap-2.5 py-3.5 text-[15px] font-bold disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-200 ${
+                      reportStatus === 'done'
+                        ? 'btn-secondary'
+                        : 'btn-primary'
+                    }`}
                   >
-                    {isRefining ? (
+                    {isLoading ? (
                       <>
                         <Loader2 className="w-4.5 h-4.5 animate-spin" />
-                        Refining...
+                        Generating...
+                      </>
+                    ) : reportStatus === 'done' ? (
+                      <>
+                        <RefreshCw className="w-4 h-4" />
+                        {hasGenerationInputChanged ? 'Apply Updated Context' : 'Re-generate'}
                       </>
                     ) : (
                       <>
-                        <PenLine className="w-4 h-4" />
-                        Refine Report
+                        <Sparkles className="w-4 h-4" />
+                        Generate Report
                       </>
                     )}
                   </button>
-                )}
-                <button
-                  onClick={handleGenerate}
-                  disabled={!activeFile || activeChildren.length === 0 || isLoading}
-                  className={`w-full flex items-center justify-center gap-2.5 py-3.5 text-[15px] font-bold disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-200 ${
-                    reportStatus === 'done'
-                      ? 'btn-secondary'
-                      : 'btn-primary'
-                  }`}
-                >
-                  {isLoading ? (
-                    <>
-                      <Loader2 className="w-4.5 h-4.5 animate-spin" />
-                      Generating...
-                    </>
-                  ) : reportStatus === 'done' ? (
-                    <>
-                      <RefreshCw className="w-4 h-4" />
-                      Re-generate
-                    </>
-                  ) : (
-                    <>
-                      <Sparkles className="w-4 h-4" />
-                      Generate Report
-                    </>
+
+                  {(!activeFile || activeChildren.length === 0) && (
+                    <p className="text-[11px] text-muted-foreground px-1">
+                      {!activeFile
+                        ? 'Upload a photo to enable generation.'
+                        : 'Select at least one student in Main Focus photo to enable generation.'}
+                    </p>
                   )}
-                </button>
+                </div>
               </div>
             </motion.div>
 
