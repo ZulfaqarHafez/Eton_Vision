@@ -1,9 +1,18 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Loader2, FileText, ChevronLeft, ChevronRight, Calendar, User, Trash2 } from "lucide-react";
+import { Loader2, FileText, Calendar, User, Trash2 } from "lucide-react";
 import { fetchPublishedReports, deletePublishedReport, type PublishedReport } from "@/frontend/lib/supabase";
-import { CATEGORY_COLORS } from "@/frontend/lib/parseReport";
+import { CATEGORY_COLORS } from "../lib/parseReport";
 import { Header } from "@/frontend/components/Header";
+
+function isMandarinReport(report: PublishedReport): boolean {
+  const hasZhCategory = report.learning_analysis?.some((item) => /[\u4e00-\u9fff]/.test(item.category));
+  if (hasZhCategory) return true;
+
+  const combined = `${report.context || ''}\n${report.observation || ''}`;
+  const cjkCount = combined.match(/[\u4e00-\u9fff]/g)?.length ?? 0;
+  return cjkCount >= 12;
+}
 
 export default function Feed() {
   const [reports, setReports] = useState<PublishedReport[]>([]);
@@ -52,7 +61,7 @@ export default function Feed() {
 
           {!loading && reports.length === 0 && (
             <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
-              <div className="w-16 h-16 rounded-2xl bg-secondary flex items-center justify-center">
+              <div className="w-16 h-16 rounded-2xl bg-secondary/70 border border-border/60 flex items-center justify-center">
                 <FileText className="w-8 h-8 text-muted-foreground/40" />
               </div>
               <p className="text-lg font-semibold text-foreground/50">No published reports yet</p>
@@ -64,6 +73,10 @@ export default function Feed() {
 
           {reports.map((report, index) => {
             const isExpanded = expandedId === report.id;
+            const mandarin = isMandarinReport(report);
+            const labels = mandarin
+              ? { context: '情境', observation: '观察记录', analysis: '学习分析' }
+              : { context: 'Context', observation: 'Observation', analysis: 'Learning Analysis' };
 
             return (
               <motion.div
@@ -71,14 +84,14 @@ export default function Feed() {
                 initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.3, delay: index * 0.05 }}
-                className="rounded-2xl border border-border bg-card overflow-hidden shadow-sm hover:shadow-md transition-shadow"
+                className="rounded-2xl border border-border/80 bg-card/90 overflow-hidden shadow-sm hover:shadow-md transition-shadow"
               >
                 {/* Card Header */}
                 <div className="relative">
                   <button
                     type="button"
                     onClick={() => setExpandedId(isExpanded ? null : report.id)}
-                    className="w-full text-left px-5 py-4 pr-16 hover:bg-secondary/20 transition-colors min-h-[72px]"
+                    className="w-full text-left px-5 py-4 pr-16 hover:bg-secondary/35 transition-colors min-h-[72px]"
                   >
                     <div className="flex items-start gap-4">
                       {/* Thumbnail — larger for easier recognition */}
@@ -97,7 +110,7 @@ export default function Feed() {
                             {report.student_name}
                           </span>
                           {report.class_group && (
-                            <span className="px-2 py-0.5 rounded-lg bg-accent/10 text-accent text-xs font-semibold">
+                            <span className="px-2 py-0.5 rounded-lg bg-secondary/70 text-foreground/80 border border-border/60 text-xs font-semibold">
                               {report.class_group}
                             </span>
                           )}
@@ -135,18 +148,18 @@ export default function Feed() {
                     initial={{ height: 0, opacity: 0 }}
                     animate={{ height: "auto", opacity: 1 }}
                     transition={{ duration: 0.3 }}
-                    className="border-t border-border"
+                    className="border-t border-border/70 bg-background/35"
                   >
                     {/* Student info bar */}
-                    <div className="px-5 py-3 bg-secondary/30 border-b border-border">
+                    <div className="px-5 py-3 bg-secondary/35 border-b border-border/70">
                       <div className="text-xs text-muted-foreground mb-1.5">Showing to:</div>
                       <div className="flex items-center gap-2 flex-wrap">
                         {report.class_group && (
-                          <span className="inline-block px-3 py-1.5 rounded-lg bg-accent/10 text-accent text-sm font-semibold">
+                          <span className="inline-block px-3 py-1.5 rounded-lg bg-background/80 border border-border/60 text-foreground/80 text-sm font-semibold">
                             {report.class_group}
                           </span>
                         )}
-                        <span className="inline-block px-3 py-1.5 rounded-lg bg-accent/10 text-accent text-sm font-semibold">
+                        <span className="inline-block px-3 py-1.5 rounded-lg bg-background/80 border border-border/60 text-foreground/80 text-sm font-semibold">
                           {report.student_name}
                         </span>
                       </div>
@@ -154,33 +167,27 @@ export default function Feed() {
 
                     {/* Photo */}
                     {report.image_url && (
-                      <div className="relative flex items-center justify-center bg-gray-50 border-b border-border">
+                      <div className="relative flex items-center justify-center bg-secondary/35 border-b border-border/70">
                         <img
                           src={report.image_url}
                           alt="Observation"
                           className="max-h-[400px] w-auto object-contain"
                         />
-                        <button type="button" className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/90 border border-border flex items-center justify-center shadow-sm">
-                          <ChevronLeft className="w-5 h-5 text-muted-foreground" />
-                        </button>
-                        <button type="button" className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/90 border border-border flex items-center justify-center shadow-sm">
-                          <ChevronRight className="w-5 h-5 text-muted-foreground" />
-                        </button>
                       </div>
                     )}
 
                     {/* Context */}
                     {report.context && (
-                      <div className="px-5 py-4 border-b border-border">
-                        <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">Context:</h4>
+                      <div className="px-5 py-4 border-b border-border/70">
+                        <h4 className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-2">{labels.context}:</h4>
                         <p className="text-base leading-relaxed text-foreground">{report.context}</p>
                       </div>
                     )}
 
                     {/* Observation */}
                     {report.observation && (
-                      <div className="px-5 py-4 border-b border-border">
-                        <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">Observation:</h4>
+                      <div className="px-5 py-4 border-b border-border/70">
+                        <h4 className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-2">{labels.observation}:</h4>
                         <p className="text-base leading-7 text-foreground whitespace-pre-line">{report.observation}</p>
                       </div>
                     )}
@@ -188,12 +195,12 @@ export default function Feed() {
                     {/* Learning Analysis */}
                     {report.learning_analysis && report.learning_analysis.length > 0 && (
                       <div className="px-5 py-4">
-                        <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3">Learning Analysis:</h4>
+                        <h4 className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-3">{labels.analysis}:</h4>
                         <div className="space-y-3">
                           {report.learning_analysis.map((item) => {
                             const colors = CATEGORY_COLORS[item.category] || { bg: '#F5F5F5', border: '#DDD', dot: '#999' };
                             return (
-                              <div key={item.category} className="flex items-start gap-3 p-3 rounded-xl bg-secondary/30">
+                              <div key={item.category} className="flex items-start gap-3 p-3 rounded-xl bg-background/75 border border-border/60">
                                 <span
                                   className="w-2.5 h-2.5 rounded-full flex-shrink-0 mt-1.5"
                                   style={{ background: colors.dot }}

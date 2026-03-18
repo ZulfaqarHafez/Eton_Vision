@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Settings, X, Check, ExternalLink, AlertCircle, Sparkles } from "lucide-react";
+import { X, Check, ExternalLink, AlertCircle, Sparkles } from "lucide-react";
 import {
   VLMProvider,
   VLMConfig,
@@ -106,7 +106,7 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={onClose}
-            className="fixed inset-0 bg-black/50 z-40"
+            className="fixed inset-0 bg-black/35 z-40"
           />
 
           {/* Panel */}
@@ -115,13 +115,13 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 300 }}
             transition={{ type: "spring", damping: 25, stiffness: 300 }}
-            className="fixed right-0 top-0 h-full w-full max-w-md bg-[hsl(38,50%,97%)] border-l border-[hsl(35,25%,88%)] z-50 overflow-y-auto"
+            className="fixed right-0 top-0 h-full w-full max-w-md bg-card/95 border-l border-border/80 z-50 overflow-y-auto"
           >
             <div className="p-6">
               {/* Header */}
               <div className="flex items-center justify-between mb-6">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[hsl(12,76%,61%)] to-[hsl(25,90%,72%)] flex items-center justify-center shadow-sm">
+                  <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-primary/90 to-accent/80 flex items-center justify-center shadow-sm">
                     <Sparkles className="w-5 h-5 text-white" />
                   </div>
                   <div>
@@ -131,7 +131,7 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                 </div>
                 <button
                   onClick={onClose}
-                  className="p-2 hover:bg-white/60 rounded-xl transition-colors border border-transparent hover:border-[hsl(35,25%,88%)]"
+                  className="p-2 hover:bg-secondary/60 rounded-xl transition-colors border border-transparent hover:border-border/70"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -147,8 +147,8 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                       onClick={() => handleProviderChange(provider)}
                       className={`p-4 rounded-2xl border-2 text-left transition-all ${
                         config.provider === provider
-                          ? 'border-[hsl(12,76%,61%)] bg-[hsl(12,76%,61%,0.06)]'
-                          : 'border-[hsl(35,25%,88%)] hover:border-[hsl(12,76%,61%,0.4)] bg-white/50'
+                          ? 'border-primary/50 bg-primary/8'
+                          : 'border-border/70 hover:border-primary/30 bg-background/70'
                       }`}
                     >
                       <div className="flex items-start justify-between">
@@ -156,7 +156,7 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                           <div className="flex items-center gap-2">
                             <span className="font-bold font-display">{providerInfo[provider].name}</span>
                             {providerInfo[provider].requiresKey && (
-                              <span className="text-[10px] px-2 py-0.5 bg-[hsl(42,95%,65%,0.15)] text-[hsl(42,60%,40%)] rounded-full font-bold">
+                              <span className="text-[10px] px-2 py-0.5 bg-secondary text-muted-foreground rounded-full font-bold">
                                 API Key Required
                               </span>
                             )}
@@ -166,7 +166,7 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                           </p>
                         </div>
                         {config.provider === provider && (
-                          <Check className="w-5 h-5 text-[hsl(12,76%,61%)] flex-shrink-0" />
+                          <Check className="w-5 h-5 text-primary/80 flex-shrink-0" />
                         )}
                       </div>
                     </button>
@@ -209,7 +209,7 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                     value={config.apiKey || ''}
                     onChange={(e) => setLocalConfig({ ...config, apiKey: e.target.value })}
                     placeholder="Enter your API key..."
-                    className="w-full px-4 py-3 rounded-xl border border-[hsl(35,25%,88%)] bg-white/70 text-sm focus:outline-none focus:ring-2 focus:ring-[hsl(12,76%,61%,0.3)] focus:border-[hsl(12,76%,61%,0.5)]"
+                    className="w-full px-4 py-3 rounded-xl border border-border/70 bg-background/80 text-sm focus:outline-none focus:ring-2 focus:ring-primary/25 focus:border-primary/45"
                   />
                 )}
                 {config.provider === 'huggingface' && !config.apiKey && (
@@ -226,7 +226,7 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                 <select
                   value={config.model}
                   onChange={(e) => setLocalConfig({ ...config, model: e.target.value })}
-                  className="w-full px-4 py-3 rounded-xl border border-[hsl(35,25%,88%)] bg-white/70 text-sm focus:outline-none focus:ring-2 focus:ring-[hsl(12,76%,61%,0.3)] focus:border-[hsl(12,76%,61%,0.5)]"
+                  className="w-full px-4 py-3 rounded-xl border border-border/70 bg-background/80 text-sm focus:outline-none focus:ring-2 focus:ring-primary/25 focus:border-primary/45"
                 >
                   {AVAILABLE_MODELS[config.provider].map((model) => (
                     <option key={model.id} value={model.id}>
@@ -234,6 +234,9 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                     </option>
                   ))}
                 </select>
+                <p className="text-xs text-muted-foreground">
+                  Output language is selected directly in the Reports workspace.
+                </p>
               </div>
 
               {/* Base URL (Advanced) */}
@@ -245,13 +248,13 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
                   type="text"
                   value={config.baseUrl || ''}
                   onChange={(e) => setLocalConfig({ ...config, baseUrl: e.target.value })}
-                  className="w-full px-4 py-3 rounded-xl border border-[hsl(35,25%,88%)] bg-white/70 focus:outline-none focus:ring-2 focus:ring-[hsl(12,76%,61%,0.3)] focus:border-[hsl(12,76%,61%,0.5)] font-mono text-xs"
+                  className="w-full px-4 py-3 rounded-xl border border-border/70 bg-background/80 focus:outline-none focus:ring-2 focus:ring-primary/25 focus:border-primary/45 font-mono text-xs"
                 />
               </div>
 
               {/* Ollama Instructions */}
               {config.provider === 'ollama' && (
-                <div className="mt-6 p-4 rounded-2xl bg-white/50 border border-[hsl(35,25%,88%)]">
+                <div className="mt-6 p-4 rounded-2xl bg-background/70 border border-border/70">
                   <h3 className="text-sm font-bold font-display mb-2">Setup Instructions</h3>
                   <ol className="text-xs text-muted-foreground space-y-2">
                     <li>1. Install Ollama from <a href="https://ollama.ai" target="_blank" className="text-primary hover:underline">ollama.ai</a></li>
@@ -266,7 +269,7 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
               <div className="mt-8">
                 <button
                   onClick={handleSave}
-                  className="w-full py-3 rounded-2xl bg-gradient-to-r from-[hsl(12,76%,61%)] to-[hsl(25,90%,72%)] text-white font-extrabold font-display hover:opacity-90 transition-all shadow-sm hover:shadow-md flex items-center justify-center gap-2"
+                  className="w-full py-3 rounded-2xl bg-gradient-to-r from-primary to-accent text-white font-extrabold font-display hover:opacity-90 transition-all shadow-sm hover:shadow-md flex items-center justify-center gap-2"
                 >
                   {saved ? (
                     <>
@@ -280,7 +283,7 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
               </div>
 
               {/* Current Config Display */}
-              <div className="mt-6 p-4 rounded-2xl bg-white/40 border border-[hsl(35,25%,88%)]">
+              <div className="mt-6 p-4 rounded-2xl bg-secondary/40 border border-border/70">
                 <p className="text-xs text-muted-foreground">
                   Current: <span className="font-mono">{config.provider}</span> / <span className="font-mono">{config.model}</span>
                 </p>

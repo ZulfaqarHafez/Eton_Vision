@@ -1,6 +1,23 @@
 import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
+
+function getPackageName(id: string): string | null {
+  const marker = "node_modules/";
+  const idx = id.lastIndexOf(marker);
+  if (idx === -1) return null;
+
+  const remainder = id.slice(idx + marker.length);
+  const parts = remainder.split("/");
+  if (parts.length === 0) return null;
+
+  if (parts[0].startsWith("@") && parts.length > 1) {
+    return `${parts[0]}/${parts[1]}`;
+  }
+
+  return parts[0];
+}
+
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
@@ -29,6 +46,42 @@ export default defineConfig(({ mode }) => {
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+    },
+  },
+  build: {
+    // Face-recognition workloads include a large tfjs-core chunk even after code splitting.
+    // Raise the warning threshold so remaining warnings are meaningful regressions.
+    chunkSizeWarningLimit: 650,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes("node_modules")) return;
+          const pkgName = getPackageName(id);
+          if (!pkgName) return;
+
+          if (["react", "react-dom", "react-router-dom", "scheduler"].includes(pkgName)) {
+            return "framework";
+          }
+
+          if (pkgName === "face-api.js") {
+            return "vision-face-api";
+          }
+
+          if (pkgName.startsWith("@tensorflow/")) {
+            return `vision-${pkgName.replace("@tensorflow/", "tf-")}`;
+          }
+
+          if (["framer-motion", "lucide-react", "sonner"].includes(pkgName) || pkgName.startsWith("@radix-ui/")) {
+            return "ui-kit";
+          }
+
+          if (pkgName === "@supabase/supabase-js") {
+            return "data-client";
+          }
+
+          return "vendor";
+        },
+      },
     },
   },
 }; });

@@ -1,35 +1,47 @@
-import { useState, useCallback, useMemo, useEffect, useRef } from "react";
+import { useState, useCallback, useMemo, useEffect, useRef, Suspense, lazy } from "react";
 import { motion } from "framer-motion";
-import { Loader2, Sparkles, PenLine, RefreshCw } from "lucide-react";
+import { Loader2, Sparkles, PenLine, RefreshCw, Languages } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
 import { Header } from "@/frontend/components/Header";
 import { ImageUpload, type UploadedPhoto } from "@/frontend/components/ImageUpload";
 import { ReportPanel } from "@/frontend/components/ReportPanel";
 import { SettingsPanel } from "@/frontend/components/SettingsPanel";
-import { FaceTagPanel } from "@/frontend/components/FaceTagPanel";
-import { StudentList } from "@/frontend/components/StudentList";
-import { PhotoReview, type ScannedPhoto } from "@/frontend/components/PhotoReview";
-import { analyzeImage, getVLMConfig, refineReport } from "@/backend/services/vlm";
-import { parseReport, type ParsedReport } from "@/frontend/lib/parseReport";
+import { analyzeImage, getVLMConfig, refineReport, setVLMConfig, type ReportLanguage } from "@/backend/services/vlm";
+import type { ParsedReport } from "../lib/parseReport";
+import type { ScannedPhoto } from "@/frontend/components/PhotoReview";
 import {
   fetchRecentReportsForStudent,
   type TaggedChild,
 } from "@/frontend/lib/supabase";
 
+const LazyFaceTagPanel = lazy(() =>
+  import("@/frontend/components/FaceTagPanel").then((module) => ({ default: module.FaceTagPanel })),
+);
+const LazyPhotoReview = lazy(() =>
+  import("@/frontend/components/PhotoReview").then((module) => ({ default: module.PhotoReview })),
+);
+const LazyStudentList = lazy(() =>
+  import("@/frontend/components/StudentList").then((module) => ({ default: module.StudentList })),
+);
+
+function PanelLoadingFallback({ label }: { label: string }) {
+  return (
+    <div className="flex items-center justify-center gap-2 py-4 rounded-xl border border-border/70 bg-background/60 text-xs text-muted-foreground">
+      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+      {label}
+    </div>
+  );
+}
+
 export type ReportStatus = 'idle' | 'loading' | 'error' | 'done';
 
-/* Decorative SVG elements for kid-friendly feel */
-function DecoStars({ className }: { className?: string }) {
-  return (
-    <svg className={className} width="120" height="40" viewBox="0 0 120 40" fill="none">
-      <circle cx="8" cy="8" r="3" fill="hsl(42,95%,65%)" opacity="0.4" />
-      <circle cx="45" cy="30" r="2" fill="hsl(152,40%,49%)" opacity="0.3" />
-      <circle cx="90" cy="12" r="2.5" fill="hsl(12,76%,61%)" opacity="0.3" />
-      <circle cx="110" cy="32" r="1.5" fill="hsl(200,80%,65%)" opacity="0.35" />
-      <path d="M25 18l1.5-3 3.2-1.5-3.2-1.5L25 9l-1.5 3-3.2 1.5 3.2 1.5z" fill="hsl(42,95%,65%)" opacity="0.5" />
-      <path d="M70 6l1-2 2.1-1-2.1-1L70 0l-1 2-2.1 1 2.1 1z" fill="hsl(270,55%,70%)" opacity="0.4" />
-    </svg>
-  );
+function getProviderLabel(provider: string): string {
+  if (provider === 'colab') return 'Qwen2-VL';
+  if (provider === 'openai') return 'OpenAI';
+  if (provider === 'huggingface') return 'Hugging Face';
+  if (provider === 'ollama') return 'Ollama';
+  if (provider === 'openrouter') return 'OpenRouter';
+  return provider;
 }
 
 const ACTIVITY_CONTEXT_DRAFT_KEY = "eton_activity_context_draft";
@@ -56,20 +68,28 @@ function isMeaningfulGeneratedOutput(text: string): boolean {
   return normalized.length >= 24;
 }
 
+function shiftPhotoIndexedRecord<T>(source: Record<number, T>, removedIndex: number): Record<number, T> {
+  const next: Record<number, T> = {};
+  for (const [key, value] of Object.entries(source)) {
+    const numericKey = Number(key);
+    if (numericKey === removedIndex) continue;
+    const nextKey = numericKey > removedIndex ? numericKey - 1 : numericKey;
+    next[nextKey] = value;
+  }
+  return next;
+}
+
+function languageToggleButtonClass(isActive: boolean): string {
+  return `rounded-xl px-3 py-2 text-sm font-bold border transition-all disabled:opacity-50 ${
+    isActive
+      ? 'bg-primary text-white border-primary shadow-sm'
+      : 'bg-background/85 border-border/70 text-muted-foreground hover:text-foreground hover:border-primary/30'
+  }`;
+}
+
 const Index = () => {
   const [searchParams] = useSearchParams();
   const activeTab = searchParams.get("tab") === "students" ? "students" : "reports";
-
-  const shiftPhotoIndexedRecord = <T,>(source: Record<number, T>, removedIndex: number): Record<number, T> => {
-    const next: Record<number, T> = {};
-    for (const [key, value] of Object.entries(source)) {
-      const numericKey = Number(key);
-      if (numericKey === removedIndex) continue;
-      const nextKey = numericKey > removedIndex ? numericKey - 1 : numericKey;
-      next[nextKey] = value;
-    }
-    return next;
-  };
 
   // ── Shared report state ──────────────────────────────────
   const [context, setContext] = useState("");
@@ -79,6 +99,8 @@ const Index = () => {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isRefining, setIsRefining] = useState(false);
   const [refinePrompt, setRefinePrompt] = useState("");
+  const [reportLanguage, setReportLanguageState] = useState<ReportLanguage>('EN');
+  const [currentProvider, setCurrentProvider] = useState(getVLMConfig().provider);
   const [includeHistoryContext, setIncludeHistoryContext] = useState(true);
   const [historyAssistNote, setHistoryAssistNote] = useState<string | null>(null);
   const [lastGenerationFingerprint, setLastGenerationFingerprint] = useState("");
@@ -108,6 +130,37 @@ const Index = () => {
   useEffect(() => {
     localStorage.setItem(ACTIVITY_CONTEXT_DRAFT_KEY, context);
   }, [context]);
+
+  const syncRuntimeConfig = useCallback(() => {
+    const config = getVLMConfig();
+    setReportLanguageState(config.reportLanguage === 'ZH' ? 'ZH' : 'EN');
+    setCurrentProvider(config.provider);
+  }, []);
+
+  useEffect(() => {
+    syncRuntimeConfig();
+  }, [syncRuntimeConfig]);
+
+  const handleReportLanguageChange = useCallback((language: ReportLanguage) => {
+    const config = getVLMConfig();
+    setCurrentProvider(config.provider);
+    setReportLanguageState(language);
+    setVLMConfig({ reportLanguage: language });
+  }, []);
+
+  const resetReportGenerationState = useCallback(() => {
+    setReportText('');
+    setReportStatus('idle');
+    setReportError(null);
+    setHistoryAssistNote(null);
+    setLastGenerationFingerprint('');
+  }, []);
+
+  const resetLegacySinglePhotoState = useCallback(() => {
+    setSelectedImage(null);
+    setImageFile(null);
+    setTaggedChildren([]);
+  }, []);
 
   const dedupeTags = useCallback((tags: TaggedChild[]) => {
     const tagMap = new Map<string, TaggedChild>();
@@ -172,8 +225,8 @@ const Index = () => {
   }, [activeFile]);
 
   const currentGenerationFingerprint = useMemo(
-    () => `${activityContext}__${activeStudentIdsKey}__${activeFileKey}`,
-    [activityContext, activeStudentIdsKey, activeFileKey],
+    () => `${activityContext}__${activeStudentIdsKey}__${activeFileKey}__${reportLanguage}`,
+    [activityContext, activeStudentIdsKey, activeFileKey, reportLanguage],
   );
 
   const hasGenerationInputChanged = reportStatus === 'done'
@@ -212,12 +265,8 @@ const Index = () => {
     setSelectedImage(preview);
     setImageFile(file);
     setTaggedChildren([]);
-    setReportText('');
-    setReportStatus('idle');
-    setReportError(null);
-    setHistoryAssistNote(null);
-    setLastGenerationFingerprint('');
-  }, []);
+    resetReportGenerationState();
+  }, [resetReportGenerationState]);
 
   const handleClearAll = useCallback(() => {
     // Clear batch
@@ -226,18 +275,10 @@ const Index = () => {
     setPrimaryPhotoIndex(0);
     setExcludedStudentIdsByPhoto({});
     setManuallyAddedStudentsByPhoto({});
-    // Clear legacy
-    setSelectedImage(null);
-    setImageFile(null);
-    setTaggedChildren([]);
-    // Clear report
-    setReportText('');
-    setReportStatus('idle');
-    setReportError(null);
+    resetLegacySinglePhotoState();
+    resetReportGenerationState();
     setRefinePrompt('');
-    setHistoryAssistNote(null);
-    setLastGenerationFingerprint('');
-  }, []);
+  }, [resetLegacySinglePhotoState, resetReportGenerationState]);
 
   const handleBatchSelect = useCallback((photos: UploadedPhoto[]) => {
     setBatchPhotos(photos);
@@ -245,16 +286,9 @@ const Index = () => {
     setPrimaryPhotoIndex(0);
     setExcludedStudentIdsByPhoto({});
     setManuallyAddedStudentsByPhoto({});
-    // Clear legacy single-photo state
-    setSelectedImage(null);
-    setImageFile(null);
-    setTaggedChildren([]);
-    setReportText('');
-    setReportStatus('idle');
-    setReportError(null);
-    setHistoryAssistNote(null);
-    setLastGenerationFingerprint('');
-  }, []);
+    resetLegacySinglePhotoState();
+    resetReportGenerationState();
+  }, [resetLegacySinglePhotoState, resetReportGenerationState]);
 
   const handleAddMorePhotos = useCallback((newPhotos: UploadedPhoto[]) => {
     setBatchPhotos(prev => [...prev, ...newPhotos]);
@@ -320,6 +354,11 @@ const Index = () => {
     });
   }, [primaryPhotoIndex]);
 
+  const handleSettingsClose = useCallback(() => {
+    setIsSettingsOpen(false);
+    syncRuntimeConfig();
+  }, [syncRuntimeConfig]);
+
   const handleGenerate = useCallback(async () => {
     if (!activeFile) {
       setReportError('Upload a photo before generating a report.');
@@ -343,11 +382,17 @@ const Index = () => {
 
     try {
       const config = getVLMConfig();
+      const runConfig = {
+        ...config,
+        reportLanguage,
+      };
+      setCurrentProvider(runConfig.provider);
+      setVLMConfig({ reportLanguage });
       let historicalSummary: string | undefined;
 
       if (includeHistoryContext) {
-        if (config.provider === 'colab') {
-          setHistoryAssistNote('History assist is unavailable on Colab mode. Using Activity Context only.');
+        if (runConfig.provider === 'colab') {
+          setHistoryAssistNote('History assist is unavailable in Colab mode. Using Activity Context only.');
         } else {
           const summary = await buildHistoricalSummary();
           if (summary) {
@@ -375,13 +420,13 @@ const Index = () => {
               streamedText += chunk;
               setReportText((prev) => prev + chunk);
             },
-            undefined,
-            { historicalSummary: summaryOverride },
+            runConfig,
+            { historicalSummary: summaryOverride, language: reportLanguage },
           );
 
           const timeoutPromise = new Promise<never>((_, reject) => {
             timeoutId = setTimeout(() => {
-              reject(new Error('Generation timed out after 90 seconds. Please retry or switch provider in Settings.'));
+              reject(new Error('Generation timed out after 90 seconds. Please retry.'));
             }, 90000);
           });
 
@@ -409,7 +454,7 @@ const Index = () => {
         if (generationRunRef.current !== runId) return;
 
         if (!isMeaningfulGeneratedOutput(retryOutput)) {
-          throw new Error('Model returned an empty response. Please retry, or switch provider in Settings.');
+          throw new Error('Model returned an empty response. Please retry.');
         }
       }
 
@@ -423,8 +468,6 @@ const Index = () => {
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
       setReportError(errorMsg);
       setReportStatus('error');
-    } finally {
-      // No-op: per-attempt timeout cleanup is handled inside runAttempt.
     }
   }, [
     activeChildren.length,
@@ -434,15 +477,23 @@ const Index = () => {
     childNames,
     currentGenerationFingerprint,
     includeHistoryContext,
+    reportLanguage,
   ]);
 
   const isLoading = reportStatus === 'loading';
+  const outputLanguageLabel = reportLanguage === 'ZH' ? 'Mandarin Chinese' : 'English';
+  const generateButtonLabel = reportLanguage === 'ZH' ? 'Generate Mandarin Report' : 'Generate Report';
+  const languageHelpText = reportLanguage === 'ZH'
+    ? 'Mandarin mode converts the report into the SPARK Mandarin template automatically.'
+    : 'English mode generates the report directly in English.';
+  const canRefine = refinePrompt.trim().length > 0 && !isRefining && !hasGenerationInputChanged;
+  const isGenerateDisabled = !activeFile || activeChildren.length === 0 || isLoading || isRefining;
 
   const handleFollowUp = useCallback(async () => {
     if (!reportText || isRefining || !refinePrompt.trim()) return;
 
     if (hasGenerationInputChanged) {
-      setReportError('Activity context or selected students changed. Generate again before refining.');
+      setReportError('Activity context, selected students, or output language changed. Generate again before refining.');
       return;
     }
 
@@ -453,6 +504,9 @@ const Index = () => {
     setReportStatus('loading');
 
     try {
+      const config = getVLMConfig();
+      setCurrentProvider(config.provider);
+      setVLMConfig({ reportLanguage });
       await refineReport(
         currentReport,
         refinePrompt,
@@ -471,7 +525,7 @@ const Index = () => {
     } finally {
       setIsRefining(false);
     }
-  }, [reportText, isRefining, refinePrompt, childNames, activeFile, hasGenerationInputChanged]);
+  }, [reportText, isRefining, refinePrompt, childNames, activeFile, hasGenerationInputChanged, reportLanguage]);
 
   const handleReportEdit = useCallback((updated: ParsedReport) => {
     setReportText(updated.raw);
@@ -481,13 +535,12 @@ const Index = () => {
     <div className="min-h-screen bg-background relative overflow-hidden">
       {/* Warm decorative background blobs */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
-        <div className="absolute -top-32 -right-32 w-[500px] h-[500px] rounded-full bg-[hsl(12,76%,61%,0.03)] blur-3xl" />
-        <div className="absolute top-1/3 -left-40 w-[400px] h-[400px] rounded-full bg-[hsl(152,40%,49%,0.03)] blur-3xl" />
-        <div className="absolute -bottom-20 right-1/4 w-[350px] h-[350px] rounded-full bg-[hsl(42,95%,65%,0.04)] blur-3xl" />
+        <div className="absolute -top-40 -right-36 w-[460px] h-[460px] rounded-full bg-primary/4 blur-3xl" />
+        <div className="absolute top-1/3 -left-44 w-[360px] h-[360px] rounded-full bg-accent/4 blur-3xl" />
       </div>
 
       <Header onSettingsOpen={() => setIsSettingsOpen(true)} />
-      <SettingsPanel isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
+      <SettingsPanel isOpen={isSettingsOpen} onClose={handleSettingsClose} />
 
       <main className="relative z-10 h-[calc(100vh-4rem)] pt-16 pb-16 md:pb-0">
         {/* Reports View */}
@@ -498,33 +551,28 @@ const Index = () => {
               initial={{ opacity: 0, x: -12 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.4 }}
-              className="w-full md:w-[420px] lg:w-[460px] md:min-w-[360px] h-auto md:h-full p-5 md:p-6 flex flex-col gap-5 md:border-r border-border/50 overflow-y-auto bg-white/40"
+              className="w-full md:w-[420px] lg:w-[460px] md:min-w-[360px] h-auto md:h-full p-5 md:p-6 flex flex-col gap-5 md:border-r border-border/50 overflow-y-auto bg-card/45"
             >
-              {/* Section heading */}
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <DecoStars className="hidden md:block" />
-                </div>
-              </div>
-
               {/* ── Upload or PhotoReview ──────────────────── */}
               {isBatchMode ? (
-                <PhotoReview
-                  photos={batchPhotos}
-                  savedScans={scannedResults}
-                  onScanComplete={handleScanComplete}
-                  primaryIndex={primaryPhotoIndex}
-                  onSetPrimary={setPrimaryPhotoIndex}
-                  onAddMore={handleAddMorePhotos}
-                  onRemovePhoto={handleRemovePhoto}
-                  currentPhotoTags={currentPhotoTags}
-                  photoTagsByIndex={photoTagsByIndex}
-                  excludedStudentIds={currentExcludedStudentIds}
-                  onToggleStudent={handleToggleStudent}
-                  onManualAdd={handleManualAddStudent}
-                  totalUniqueFound={totalUniqueTags.length}
-                  onClearAll={handleClearAll}
-                />
+                <Suspense fallback={<PanelLoadingFallback label="Loading photo review tools..." />}>
+                  <LazyPhotoReview
+                    photos={batchPhotos}
+                    savedScans={scannedResults}
+                    onScanComplete={handleScanComplete}
+                    primaryIndex={primaryPhotoIndex}
+                    onSetPrimary={setPrimaryPhotoIndex}
+                    onAddMore={handleAddMorePhotos}
+                    onRemovePhoto={handleRemovePhoto}
+                    currentPhotoTags={currentPhotoTags}
+                    photoTagsByIndex={photoTagsByIndex}
+                    excludedStudentIds={currentExcludedStudentIds}
+                    onToggleStudent={handleToggleStudent}
+                    onManualAdd={handleManualAddStudent}
+                    totalUniqueFound={totalUniqueTags.length}
+                    onClearAll={handleClearAll}
+                  />
+                </Suspense>
               ) : (
                 <>
                   {/* Single-photo upload */}
@@ -554,11 +602,15 @@ const Index = () => {
                     )}
                   </div>
 
-                  <FaceTagPanel
-                    imageFile={imageFile}
-                    imagePreview={selectedImage}
-                    onTagsChange={setTaggedChildren}
-                  />
+                  {selectedImage && (
+                    <Suspense fallback={<PanelLoadingFallback label="Loading face tagging tools..." />}>
+                      <LazyFaceTagPanel
+                        imageFile={imageFile}
+                        imagePreview={selectedImage}
+                        onTagsChange={setTaggedChildren}
+                      />
+                    </Suspense>
+                  )}
                 </>
               )}
 
@@ -588,7 +640,7 @@ const Index = () => {
                       type="button"
                       onClick={() => setContext(template.text)}
                       disabled={isLoading || isRefining}
-                      className="text-[11px] px-2.5 py-1 rounded-full border border-border/70 bg-white/70 text-muted-foreground hover:text-foreground hover:border-primary/30 transition-colors disabled:opacity-50"
+                      className="text-[11px] px-2.5 py-1 rounded-full border border-border/70 bg-background/80 text-muted-foreground hover:text-foreground hover:border-primary/30 transition-colors disabled:opacity-50"
                     >
                       {template.label}
                     </button>
@@ -605,6 +657,42 @@ const Index = () => {
                   />
                   Use recent reports to keep continuity for the same student
                 </label>
+              </div>
+
+              {/* Report language (front workflow, not settings) */}
+              <div className="rounded-2xl border border-border/70 bg-card/82 p-3.5 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
+                    <Languages className="w-3.5 h-3.5 text-primary/70" />
+                    Output Language
+                  </label>
+                  <span className="text-[10px] font-bold text-primary/70 bg-primary/10 border border-primary/20 px-2 py-0.5 rounded-full">
+                    {getProviderLabel(currentProvider)}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleReportLanguageChange('EN')}
+                    disabled={isLoading || isRefining}
+                    className={languageToggleButtonClass(reportLanguage === 'EN')}
+                  >
+                    English
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleReportLanguageChange('ZH')}
+                    disabled={isLoading || isRefining}
+                    className={languageToggleButtonClass(reportLanguage === 'ZH')}
+                  >
+                    Mandarin
+                  </button>
+                </div>
+
+                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                  {languageHelpText}
+                </p>
               </div>
 
               {/* Refine — after report */}
@@ -633,11 +721,11 @@ const Index = () => {
               )}
 
               {/* Action buttons */}
-              <div className="sticky bottom-0 mt-auto pt-2 -mx-2 px-2 pb-1 bg-gradient-to-t from-[hsl(38,50%,97%,0.98)] via-[hsl(38,50%,97%,0.92)] to-transparent backdrop-blur-sm">
-                <div className="rounded-2xl border border-border/50 bg-white/70 p-3 space-y-2.5">
+              <div className="sticky bottom-0 mt-auto pt-2 -mx-2 px-2 pb-1 bg-gradient-to-t from-background/95 via-background/85 to-transparent backdrop-blur-sm">
+                <div className="rounded-2xl border border-border/70 bg-card/88 p-3.5 space-y-2">
                   {hasGenerationInputChanged && (
                     <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-2.5 py-2">
-                      Activity context or selected students changed. Generate again to apply updates.
+                      Activity context, selected students, or output language changed. Generate again to apply updates.
                     </p>
                   )}
 
@@ -647,10 +735,16 @@ const Index = () => {
                     </p>
                   )}
 
+                  {!isLoading && (
+                    <p className="text-[11px] text-muted-foreground px-1">
+                      Output: {outputLanguageLabel}
+                    </p>
+                  )}
+
                   {reportStatus === 'done' && (
                     <button
                       onClick={handleFollowUp}
-                      disabled={!refinePrompt.trim() || isRefining || hasGenerationInputChanged}
+                      disabled={!canRefine}
                       className="btn-primary w-full flex items-center justify-center gap-2.5 py-3.5 text-[15px] font-bold disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                       {isRefining ? (
@@ -669,7 +763,7 @@ const Index = () => {
 
                   <button
                     onClick={handleGenerate}
-                    disabled={!activeFile || activeChildren.length === 0 || isLoading || isRefining}
+                    disabled={isGenerateDisabled}
                     className={`w-full flex items-center justify-center gap-2.5 py-3.5 text-[15px] font-bold disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-200 ${
                       reportStatus === 'done'
                         ? 'btn-secondary'
@@ -684,12 +778,12 @@ const Index = () => {
                     ) : reportStatus === 'done' ? (
                       <>
                         <RefreshCw className="w-4 h-4" />
-                        {hasGenerationInputChanged ? 'Apply Updated Context' : 'Re-generate'}
+                        {hasGenerationInputChanged ? 'Apply Updates' : 'Re-generate'}
                       </>
                     ) : (
                       <>
                         <Sparkles className="w-4 h-4" />
-                        Generate Report
+                        {generateButtonLabel}
                       </>
                     )}
                   </button>
@@ -732,7 +826,9 @@ const Index = () => {
         {activeTab === "students" && (
           <div className="h-full overflow-y-auto">
             <div className="max-w-2xl mx-auto p-4 md:p-6">
-              <StudentList />
+              <Suspense fallback={<PanelLoadingFallback label="Loading student workspace..." />}>
+                <LazyStudentList />
+              </Suspense>
             </div>
           </div>
         )}

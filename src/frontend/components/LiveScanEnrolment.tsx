@@ -140,20 +140,25 @@ export function LiveScanEnrolment({ onSuccess }: LiveScanEnrolmentProps) {
 
   // Initialize / teardown webcam
   useEffect(() => {
-    if (modelsLoaded && isScanning) {
+    const videoElement = videoRef.current;
+
+    if (modelsLoaded && isScanning && videoElement) {
       navigator.mediaDevices
         .getUserMedia({ video: { width: 640, height: 480 } })
         .then((stream) => {
-          if (videoRef.current) videoRef.current.srcObject = stream;
+          videoElement.srcObject = stream;
         })
         .catch((err) => {
           console.error('Webcam Error:', err);
           toast.error('Could not access webcam');
         });
     }
+
     return () => {
-      if (videoRef.current?.srcObject) {
-        (videoRef.current.srcObject as MediaStream).getTracks().forEach((t) => t.stop());
+      const stream = videoElement?.srcObject;
+      if (stream) {
+        (stream as MediaStream).getTracks().forEach((t) => t.stop());
+        videoElement.srcObject = null;
       }
     };
   }, [modelsLoaded, isScanning]);
@@ -253,7 +258,7 @@ export function LiveScanEnrolment({ onSuccess }: LiveScanEnrolmentProps) {
   }, [modelsLoaded, isScanning, currentState, getFullDetection, saveAngle]);
 
   const handleManualSnap = () => {
-    if (!isScanning || currentState === 'IDLE' || currentState === 'DONE') return;
+    if (!isScanning) return;
 
     if (currentState === 'BACK') {
       saveAngle('BACK', lastDetection);

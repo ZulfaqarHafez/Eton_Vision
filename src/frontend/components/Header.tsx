@@ -24,8 +24,8 @@ function LogoIcon() {
       <path d="M19 8l1.2-2.5L22.5 4.3l-2.3 1.2L19 8z" fill="#FFD86B" />
       <defs>
         <linearGradient id="logo-grad" x1="2" y1="2" x2="26" y2="26" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#E8845A" />
-          <stop offset="1" stopColor="#5CB88A" />
+          <stop stopColor="#C67B58" />
+          <stop offset="1" stopColor="#5A9C7B" />
         </linearGradient>
       </defs>
     </svg>
@@ -51,8 +51,8 @@ export function Header({ onSettingsOpen }: HeaderProps) {
       <motion.header
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
-        className="fixed top-0 left-0 right-0 z-50 bg-[hsl(38,50%,97%,0.92)] backdrop-blur-md border-b border-border/60"
-        style={{ boxShadow: "0 1px 12px hsl(25 30% 18% / 0.04)" }}
+        className="fixed top-0 left-0 right-0 z-50 bg-background/90 backdrop-blur-md border-b border-border/70"
+        style={{ boxShadow: "0 1px 10px hsl(25 22% 20% / 0.04)" }}
       >
         <div className="max-w-7xl mx-auto px-4 md:px-6 h-16 flex items-center justify-between">
           {/* Logo */}
@@ -65,12 +65,12 @@ export function Header({ onSettingsOpen }: HeaderProps) {
               <span className="text-xl font-extrabold tracking-tight font-display text-primary">
                 Vision
               </span>
-              <Sparkles className="w-3 h-3 text-[hsl(42,95%,65%)] ml-0.5 opacity-70 group-hover:opacity-100 transition-opacity" />
+              <Sparkles className="w-3 h-3 text-primary/45 ml-0.5 opacity-70 group-hover:opacity-100 transition-opacity" />
             </div>
           </Link>
 
           {/* Desktop Nav */}
-          <nav className="hidden md:flex items-center gap-1 bg-white/60 rounded-full p-1 border border-border/40">
+          <nav className="hidden md:flex items-center gap-1 bg-card/70 rounded-full p-1 border border-border/60">
             {NAV_ITEMS.map((item) => {
               const active = isActive(item);
               return (
@@ -80,8 +80,8 @@ export function Header({ onSettingsOpen }: HeaderProps) {
                   className={`
                     flex items-center gap-2 px-5 py-2 rounded-full text-sm font-bold transition-all duration-200
                     ${active
-                      ? "bg-white text-primary shadow-sm border border-primary/10"
-                      : "text-muted-foreground hover:text-foreground hover:bg-white/70"
+                      ? "bg-background text-primary/90 shadow-sm border border-border/80"
+                      : "text-muted-foreground hover:text-foreground hover:bg-background/70"
                     }
                   `}
                 >
@@ -96,7 +96,7 @@ export function Header({ onSettingsOpen }: HeaderProps) {
           {onSettingsOpen && (
             <button
               onClick={onSettingsOpen}
-              className="p-2.5 rounded-full bg-white/80 hover:bg-white border border-border/50 shadow-sm transition-all hover:shadow-md"
+              className="p-2.5 rounded-full bg-card/85 hover:bg-card border border-border/70 shadow-sm transition-all"
               title="Settings"
             >
               <Settings className="w-[18px] h-[18px] text-muted-foreground" />
@@ -107,7 +107,7 @@ export function Header({ onSettingsOpen }: HeaderProps) {
       </motion.header>
 
       {/* Mobile Bottom Tab Bar */}
-      <nav className="fixed bottom-0 left-0 right-0 z-50 md:hidden bg-[hsl(40,40%,99%,0.95)] backdrop-blur-md border-t border-border/60 safe-area-bottom">
+      <nav className="fixed bottom-0 left-0 right-0 z-50 md:hidden bg-card/95 backdrop-blur-md border-t border-border/70 safe-area-bottom">
         <div className="flex items-stretch justify-around h-16">
           {NAV_ITEMS.map((item) => {
             const active = isActive(item);

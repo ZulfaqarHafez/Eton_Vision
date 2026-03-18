@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Suspense, lazy } from 'react';
 import { UserPlus, Loader2, Trash2, Users, Database, Upload, Camera } from 'lucide-react';
 import { Button } from '@/frontend/components/ui/button';
 import { Avatar, AvatarImage, AvatarFallback } from '@/frontend/components/ui/avatar';
@@ -23,15 +23,30 @@ import {
 import { Badge } from '@/frontend/components/ui/badge';
 import { supabase, type Child, type FaceSignature } from '@/frontend/lib/supabase';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/frontend/components/ui/tabs';
-import { StudentEnrolment } from './StudentEnrolment';
-import { LiveScanEnrolment } from './LiveScanEnrolment';
 import { toast } from 'sonner';
+
+const StudentEnrolment = lazy(() =>
+  import('./StudentEnrolment').then((module) => ({ default: module.StudentEnrolment })),
+);
+const LiveScanEnrolment = lazy(() =>
+  import('./LiveScanEnrolment').then((module) => ({ default: module.LiveScanEnrolment })),
+);
+
+function EnrolmentLoadingFallback({ label }: { label: string }) {
+  return (
+    <div className="flex items-center justify-center gap-2 py-6 rounded-xl border border-border/70 bg-background/60 text-xs text-muted-foreground">
+      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+      {label}
+    </div>
+  );
+}
 
 export function StudentList() {
   const [children, setChildren] = useState<Child[]>([]);
   const [signatures, setSignatures] = useState<Record<string, FaceSignature[]>>({});
   const [loading, setLoading] = useState(true);
   const [enrolDialogOpen, setEnrolDialogOpen] = useState(false);
+  const [enrolMode, setEnrolMode] = useState<'upload' | 'livescan'>('upload');
   const [expandedChild, setExpandedChild] = useState<string | null>(null);
 
   const fetchStudents = useCallback(async () => {
@@ -104,6 +119,13 @@ export function StudentList() {
     return sigs?.find((s) => s.image_url)?.image_url ?? null;
   };
 
+  const handleEnrolDialogChange = (open: boolean) => {
+    setEnrolDialogOpen(open);
+    if (open) {
+      setEnrolMode('upload');
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center py-20 gap-3">
@@ -129,7 +151,7 @@ export function StudentList() {
           </div>
         </div>
 
-        <Dialog open={enrolDialogOpen} onOpenChange={setEnrolDialogOpen}>
+        <Dialog open={enrolDialogOpen} onOpenChange={handleEnrolDialogChange}>
           <DialogTrigger asChild>
             <Button size="sm">
               <UserPlus className="w-4 h-4 mr-1.5" />
@@ -140,7 +162,11 @@ export function StudentList() {
             <DialogHeader>
               <DialogTitle>Enrol New Student</DialogTitle>
             </DialogHeader>
-            <Tabs defaultValue="upload" className="w-full">
+            <Tabs
+              value={enrolMode}
+              onValueChange={(value) => setEnrolMode(value as 'upload' | 'livescan')}
+              className="w-full"
+            >
               <TabsList className="w-full">
                 <TabsTrigger value="upload" className="flex-1 gap-1.5 text-xs">
                   <Upload className="w-3.5 h-3.5" />
@@ -152,20 +178,28 @@ export function StudentList() {
                 </TabsTrigger>
               </TabsList>
               <TabsContent value="upload" className="mt-4">
-                <StudentEnrolment
-                  onSuccess={() => {
-                    setEnrolDialogOpen(false);
-                    fetchStudents();
-                  }}
-                />
+                {enrolMode === 'upload' && (
+                  <Suspense fallback={<EnrolmentLoadingFallback label="Loading upload enrolment..." />}>
+                    <StudentEnrolment
+                      onSuccess={() => {
+                        setEnrolDialogOpen(false);
+                        fetchStudents();
+                      }}
+                    />
+                  </Suspense>
+                )}
               </TabsContent>
               <TabsContent value="livescan" className="mt-4">
-                <LiveScanEnrolment
-                  onSuccess={() => {
-                    setEnrolDialogOpen(false);
-                    fetchStudents();
-                  }}
-                />
+                {enrolMode === 'livescan' && (
+                  <Suspense fallback={<EnrolmentLoadingFallback label="Loading live scan tools..." />}>
+                    <LiveScanEnrolment
+                      onSuccess={() => {
+                        setEnrolDialogOpen(false);
+                        fetchStudents();
+                      }}
+                    />
+                  </Suspense>
+                )}
               </TabsContent>
             </Tabs>
           </DialogContent>

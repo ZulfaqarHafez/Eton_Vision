@@ -12,65 +12,65 @@
 @layer base {
   :root {
     /* Warm cream base with coral + sage palette */
-    --background: 38 50% 97%;
-    --foreground: 25 30% 18%;
+    --background: 40 28% 96%;
+    --foreground: 25 22% 20%;
 
-    --card: 40 40% 99%;
-    --card-foreground: 25 30% 18%;
+    --card: 40 25% 98%;
+    --card-foreground: 25 22% 20%;
 
-    --popover: 40 40% 99%;
-    --popover-foreground: 25 30% 18%;
+    --popover: 40 25% 98%;
+    --popover-foreground: 25 22% 20%;
 
     /* Warm coral primary — friendly, energetic, kid-centric */
-    --primary: 12 76% 61%;
+    --primary: 14 58% 54%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 38 30% 93%;
-    --secondary-foreground: 25 20% 30%;
+    --secondary: 38 22% 91%;
+    --secondary-foreground: 25 16% 32%;
 
-    --muted: 35 20% 91%;
-    --muted-foreground: 25 10% 48%;
+    --muted: 34 15% 89%;
+    --muted-foreground: 25 10% 44%;
 
     /* Sage green accent — nature, growth, learning */
-    --accent: 152 40% 49%;
+    --accent: 156 28% 43%;
     --accent-foreground: 0 0% 100%;
 
     --destructive: 0 65% 55%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 35 25% 88%;
-    --input: 35 20% 88%;
-    --ring: 12 76% 61%;
+    --border: 34 18% 84%;
+    --input: 34 18% 84%;
+    --ring: 14 58% 54%;
 
     --radius: 1rem;
 
     /* Playful palette extras — used in badges, illustrations */
-    --sunshine: 42 95% 65%;
-    --sky: 200 80% 65%;
-    --lavender: 270 55% 70%;
-    --peach: 20 90% 78%;
-    --mint: 160 45% 72%;
+    --sunshine: 41 74% 60%;
+    --sky: 201 52% 60%;
+    --lavender: 271 35% 66%;
+    --peach: 22 62% 72%;
+    --mint: 160 32% 66%;
 
-    --sidebar-background: 40 40% 99%;
-    --sidebar-foreground: 25 30% 18%;
-    --sidebar-primary: 12 76% 61%;
+    --sidebar-background: 40 25% 98%;
+    --sidebar-foreground: 25 22% 20%;
+    --sidebar-primary: 14 58% 54%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 38 30% 93%;
-    --sidebar-accent-foreground: 25 20% 30%;
-    --sidebar-border: 35 25% 88%;
-    --sidebar-ring: 12 76% 61%;
+    --sidebar-accent: 38 22% 91%;
+    --sidebar-accent-foreground: 25 16% 32%;
+    --sidebar-border: 34 18% 84%;
+    --sidebar-ring: 14 58% 54%;
 
     /* Effects */
-    --gradient-primary: linear-gradient(135deg, hsl(12 76% 61%), hsl(20 85% 68%));
-    --gradient-warm: linear-gradient(135deg, hsl(12 76% 61%), hsl(42 95% 65%));
-    --gradient-nature: linear-gradient(135deg, hsl(152 40% 49%), hsl(160 45% 62%));
-    --gradient-surface: linear-gradient(180deg, hsl(38 50% 97%), hsl(38 40% 95%));
-    --gradient-card: linear-gradient(145deg, hsl(40 40% 99%), hsl(38 35% 97%));
-    --gradient-card-hover: linear-gradient(145deg, hsl(40 45% 99%), hsl(25 30% 96%));
+    --gradient-primary: linear-gradient(135deg, hsl(14 58% 54%), hsl(20 56% 61%));
+    --gradient-warm: linear-gradient(135deg, hsl(14 58% 54%), hsl(41 74% 60%));
+    --gradient-nature: linear-gradient(135deg, hsl(156 28% 43%), hsl(160 30% 56%));
+    --gradient-surface: linear-gradient(180deg, hsl(40 28% 96%), hsl(38 24% 93%));
+    --gradient-card: linear-gradient(145deg, hsl(40 25% 98%), hsl(38 22% 96%));
+    --gradient-card-hover: linear-gradient(145deg, hsl(40 27% 98%), hsl(25 20% 95%));
     --shadow-soft: 0 2px 12px hsl(25 30% 18% / 0.05);
     --shadow-card: 0 4px 24px hsl(25 40% 40% / 0.06), 0 1px 4px hsl(25 30% 18% / 0.04);
-    --shadow-card-hover: 0 8px 32px hsl(12 76% 61% / 0.1), 0 4px 12px hsl(25 30% 18% / 0.06);
-    --shadow-glow: 0 0 28px hsl(12 76% 61% / 0.15);
+    --shadow-card-hover: 0 8px 32px hsl(14 58% 54% / 0.08), 0 4px 12px hsl(25 30% 18% / 0.06);
+    --shadow-glow: 0 0 24px hsl(14 58% 54% / 0.12);
   }
 
   .dark {
@@ -80,25 +80,25 @@
     --card-foreground: 35 15% 90%;
     --popover: 25 12% 14%;
     --popover-foreground: 35 15% 90%;
-    --primary: 12 76% 64%;
+    --primary: 14 58% 58%;
     --primary-foreground: 0 0% 100%;
     --secondary: 25 12% 18%;
     --secondary-foreground: 35 10% 80%;
     --muted: 25 10% 20%;
     --muted-foreground: 35 8% 55%;
-    --accent: 152 40% 52%;
+    --accent: 156 28% 48%;
     --accent-foreground: 25 15% 10%;
     --destructive: 0 65% 55%;
     --destructive-foreground: 0 0% 100%;
     --border: 25 10% 22%;
     --input: 25 10% 22%;
-    --ring: 12 76% 64%;
+    --ring: 14 58% 58%;
 
     --gradient-card: linear-gradient(145deg, hsl(25 12% 16%), hsl(25 12% 12%));
     --gradient-card-hover: linear-gradient(145deg, hsl(25 12% 18%), hsl(25 12% 14%));
     --shadow-card: 0 4px 20px hsl(0 0% 0% / 0.3), 0 2px 6px hsl(0 0% 0% / 0.2);
-    --shadow-card-hover: 0 8px 30px hsl(12 76% 64% / 0.15), 0 4px 12px hsl(0 0% 0% / 0.3);
-    --shadow-glow: 0 0 28px hsl(12 76% 64% / 0.25);
+    --shadow-card-hover: 0 8px 30px hsl(14 58% 58% / 0.15), 0 4px 12px hsl(0 0% 0% / 0.3);
+    --shadow-glow: 0 0 28px hsl(14 58% 58% / 0.25);
   }
 }
 
@@ -190,7 +190,7 @@
 
   /* ── Buttons ────────────────────────────────────────────────── */
   .btn-primary {
-    @apply bg-gradient-to-r from-primary to-[hsl(20,85%,68%)] text-white font-bold rounded-2xl shadow-md hover:shadow-lg hover:brightness-105 active:scale-[0.98] transition-all duration-200;
+    @apply bg-gradient-to-r from-primary to-[hsl(20,56%,61%)] text-white font-bold rounded-2xl shadow-md hover:shadow-lg hover:brightness-105 active:scale-[0.98] transition-all duration-200;
   }
 
   .btn-secondary {
@@ -220,12 +220,12 @@
     @apply inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold;
   }
 
-  .badge-coral   { @apply badge-pastel; background: hsla(12,76%,61%,0.12); color: hsl(12,76%,50%); }
-  .badge-sage    { @apply badge-pastel; background: hsla(152,40%,49%,0.12); color: hsl(152,40%,38%); }
-  .badge-sky     { @apply badge-pastel; background: hsla(200,80%,65%,0.12); color: hsl(200,80%,45%); }
-  .badge-sunshine { @apply badge-pastel; background: hsla(42,95%,65%,0.12); color: hsl(42,80%,40%); }
-  .badge-lavender { @apply badge-pastel; background: hsla(270,55%,70%,0.12); color: hsl(270,55%,50%); }
-  .badge-peach   { @apply badge-pastel; background: hsla(20,90%,78%,0.15); color: hsl(20,70%,45%); }
+  .badge-coral   { @apply badge-pastel; background: hsla(14,58%,54%,0.12); color: hsl(14,58%,44%); }
+  .badge-sage    { @apply badge-pastel; background: hsla(156,28%,43%,0.12); color: hsl(156,28%,34%); }
+  .badge-sky     { @apply badge-pastel; background: hsla(201,52%,60%,0.12); color: hsl(201,52%,44%); }
+  .badge-sunshine { @apply badge-pastel; background: hsla(41,74%,60%,0.12); color: hsl(41,60%,38%); }
+  .badge-lavender { @apply badge-pastel; background: hsla(271,35%,66%,0.12); color: hsl(271,35%,48%); }
+  .badge-peach   { @apply badge-pastel; background: hsla(22,62%,72%,0.14); color: hsl(22,50%,42%); }
 
   /* ── Report section cards ───────────────────────────────────── */
   .report-section {

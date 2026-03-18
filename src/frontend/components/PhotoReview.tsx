@@ -67,6 +67,15 @@ function clampToUnit(value: number) {
   return Math.max(0, Math.min(1, value));
 }
 
+function buildDetectedFaceId(
+  fileName: string,
+  photoIndex: number,
+  detectionIndex: number,
+  box: { x: number; y: number; width: number; height: number },
+): string {
+  return `${fileName}-${photoIndex}-${detectionIndex}-${Math.round(box.x)}-${Math.round(box.y)}-${Math.round(box.width)}-${Math.round(box.height)}`;
+}
+
 /* ── PhotoReview Component ──────────────────────────────── */
 
 export function PhotoReview({
@@ -97,7 +106,6 @@ export function PhotoReview({
   const [teacherMode, setTeacherMode] = useState<'focus' | 'overview'>('focus');
   const addMoreInputRef = useRef<HTMLInputElement>(null);
   const scanLockRef = useRef(false);
-  const lastScanCountRef = useRef(savedScans.length);
 
   const includedCount = currentPhotoTags.filter(t => !excludedStudentIds.has(t.id)).length;
 
@@ -109,22 +117,6 @@ export function PhotoReview({
     }
     fetchChildren();
   }, []);
-
-  // Scan photos that haven't been scanned yet
-  useEffect(() => {
-    if (!modelsLoaded || scanning || scanLockRef.current) return;
-
-    // Determine which photos need scanning
-    const alreadyScanned = savedScans.length;
-    if (alreadyScanned >= photos.length) return;
-
-    // New photos to scan (appended after the already-scanned ones)
-    const newPhotos = photos.slice(alreadyScanned);
-    if (newPhotos.length === 0) return;
-
-    scanLockRef.current = true;
-    scanNewPhotos(newPhotos, savedScans);
-  }, [modelsLoaded, photos.length, savedScans.length]);
 
   const scanNewPhotos = useCallback(async (
     newPhotos: UploadedPhoto[],
@@ -162,7 +154,7 @@ export function PhotoReview({
             const box = det.detection.box;
             const thumbnail = getFaceCanvas(img, box);
             const match = await matchFace(embedding);
-            const faceId = `${photo.file.name}-${i}-${detIdx}-${Math.round(box.x)}-${Math.round(box.y)}-${Math.round(box.width)}-${Math.round(box.height)}`;
+            const faceId = buildDetectedFaceId(photo.file.name, i, detIdx, box);
             const normalizedBox = {
               x: clampToUnit(box.x / imageWidth),
               y: clampToUnit(box.y / imageHeight),
@@ -213,10 +205,23 @@ export function PhotoReview({
 
     const allResults = [...existingScans, ...newResults];
     onScanComplete(allResults);
-    lastScanCountRef.current = allResults.length;
     setScanning(false);
     scanLockRef.current = false;
   }, [allChildren, onScanComplete]);
+
+  // Scan photos that haven't been scanned yet
+  useEffect(() => {
+    if (!modelsLoaded || scanning || scanLockRef.current) return;
+
+    const alreadyScanned = savedScans.length;
+    if (alreadyScanned >= photos.length) return;
+
+    const newPhotos = photos.slice(alreadyScanned);
+    if (newPhotos.length === 0) return;
+
+    scanLockRef.current = true;
+    scanNewPhotos(newPhotos, savedScans);
+  }, [modelsLoaded, photos, savedScans, scanNewPhotos, scanning]);
 
   const handleAddMoreFiles = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -341,11 +346,7 @@ export function PhotoReview({
 
   useEffect(() => {
     clearPendingFaceSelection();
-  }, [primaryIndex, clearPendingFaceSelection]);
-
-  useEffect(() => {
-    clearPendingFaceSelection();
-  }, [teacherMode, clearPendingFaceSelection]);
+  }, [primaryIndex, teacherMode, clearPendingFaceSelection]);
 
   const availableChildrenForManual = allChildren.filter(
     c => !currentPhotoTags.some(t => t.id === c.id)

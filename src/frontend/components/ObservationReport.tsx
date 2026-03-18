@@ -1,7 +1,12 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Copy, Check, ChevronLeft, ChevronRight, Send, Loader2, Pencil, X, Calendar, User } from "lucide-react";
-import { ParsedReport, CATEGORY_COLORS, LearningAnalysisItem } from "@/frontend/lib/parseReport";
+import { Copy, Check, Send, Loader2, Pencil, X, Calendar, User } from "lucide-react";
+import {
+  CATEGORY_COLORS,
+  REPORT_SECTION_LABELS,
+  type LearningAnalysisItem,
+  type ParsedReport,
+} from "../lib/parseReport";
 import { publishReport, uploadReportImage, type TaggedChild } from "@/frontend/lib/supabase";
 import { toast } from "sonner";
 
@@ -27,14 +32,26 @@ const BADGE_STYLES: Record<string, string> = {
   'Collaboration & Social Skills': 'bg-[#F0FFF4] text-[#2E8B4E] border-[#B5E8C8]',
   'Cognitive Development':         'bg-[#FFF8EC] text-[#B8860B] border-[#F0DCA0]',
   'Fine Motor & Design Thinking':  'bg-[#FFE8EE] text-[#C94060] border-[#F0B5C5]',
+  '语言与读写能力':                  'bg-[#EEF6FF] text-[#3B7DD8] border-[#BFD9F5]',
+  '创意表达':                        'bg-[#FDF0FF] text-[#9A3DC8] border-[#E4BFF5]',
+  '文化认知':                        'bg-[#FFF3EC] text-[#D06830] border-[#F5D0B5]',
+  '协作与社交能力':                  'bg-[#F0FFF4] text-[#2E8B4E] border-[#B5E8C8]',
+  '认知发展':                        'bg-[#FFF8EC] text-[#B8860B] border-[#F0DCA0]',
+  '精细动作与设计思维':              'bg-[#FFE8EE] text-[#C94060] border-[#F0B5C5]',
 };
 
-function rebuildRaw(context: string, observation: string, analysis: LearningAnalysisItem[]): string {
+function rebuildRaw(
+  context: string,
+  observation: string,
+  analysis: LearningAnalysisItem[],
+  language: ParsedReport['language'],
+): string {
+  const labels = REPORT_SECTION_LABELS[language];
   let raw = '';
-  if (context) raw += `CONTEXT:\n${context}\n\n`;
-  if (observation) raw += `OBSERVATION:\n${observation}\n\n`;
+  if (context) raw += `${labels.context}:\n${context}\n\n`;
+  if (observation) raw += `${labels.observation}:\n${observation}\n\n`;
   if (analysis.length > 0) {
-    raw += `LEARNING ANALYSIS:\n\n`;
+    raw += `${labels.analysis}:\n\n`;
     for (const item of analysis) {
       raw += `${item.category}: ${item.description}\n\n`;
     }
@@ -75,7 +92,7 @@ export function ObservationReport({ report, isStreaming, childName, taggedChildr
     setEditAnalysis(report.learningAnalysis);
   }, [report]);
 
-  const saveEdit = (section: string) => {
+  const saveEdit = () => {
     setEditingSection(null);
     if (!onReportEdit) return;
     const updated: ParsedReport = {
@@ -83,7 +100,7 @@ export function ObservationReport({ report, isStreaming, childName, taggedChildr
       context: editContext,
       observation: editObservation,
       learningAnalysis: editAnalysis,
-      raw: rebuildRaw(editContext, editObservation, editAnalysis),
+      raw: rebuildRaw(editContext, editObservation, editAnalysis, report.language),
     };
     onReportEdit(updated);
   };
@@ -100,7 +117,7 @@ export function ObservationReport({ report, isStreaming, childName, taggedChildr
   };
 
   const handleCopy = async () => {
-    const rawText = rebuildRaw(editContext, editObservation, editAnalysis);
+    const rawText = rebuildRaw(editContext, editObservation, editAnalysis, report.language);
     await navigator.clipboard.writeText(rawText);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -116,7 +133,9 @@ export function ObservationReport({ report, isStreaming, childName, taggedChildr
         permanentImageUrl = await uploadReportImage(imageFile);
       }
       await publishReport({
-        title: `Moments : ${report.context || 'Classroom Observation'}`,
+        title: report.language === 'ZH'
+          ? `学习时刻 : ${report.context || '课堂观察'}`
+          : `Moments : ${report.context || 'Classroom Observation'}`,
         student_name: childName || 'Unknown',
         class_group: primaryChild?.class_group || '',
         image_url: permanentImageUrl,
@@ -139,11 +158,24 @@ export function ObservationReport({ report, isStreaming, childName, taggedChildr
   const hasAnalysis = report.learningAnalysis.length > 0;
   const hasAnySections = hasContext || hasObservation || hasAnalysis;
   const isDone = !isStreaming && hasAnySections;
+  const sectionLabels = report.language === 'ZH'
+    ? {
+        context: '情境',
+        observation: '观察记录',
+        analysis: '学习分析',
+        writingAnalysis: '正在撰写学习分析...',
+      }
+    : {
+        context: 'Context',
+        observation: 'Observation',
+        analysis: 'Learning Analysis',
+        writingAnalysis: 'Writing analysis...',
+      };
 
   const primaryChild = taggedChildren?.[0];
   const displayTitle = report.context
     ? report.context.length > 60 ? report.context.slice(0, 60) + '...' : report.context
-    : 'Classroom Observation';
+    : report.language === 'ZH' ? '课堂观察记录' : 'Classroom Observation';
 
   const dateStr = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "long", year: "numeric" });
 
@@ -153,9 +185,11 @@ export function ObservationReport({ report, isStreaming, childName, taggedChildr
       <motion.div
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
-        className="px-6 py-5 bg-gradient-to-r from-[hsl(38,50%,97%)] to-[hsl(12,76%,61%,0.04)] border-b border-border/40"
+        className="px-6 py-5 bg-gradient-to-r from-[hsl(38,50%,97%)] to-primary/5 border-b border-border/40"
       >
-        <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-primary/70 mb-1">Moments</p>
+        <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-primary/70 mb-1">
+          {report.language === 'ZH' ? '学习时刻' : 'Moments'}
+        </p>
         <h2 className="text-lg font-extrabold text-foreground font-display leading-snug">{displayTitle}</h2>
         <div className="flex items-center gap-4 mt-2.5">
           <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground font-medium">
@@ -204,12 +238,6 @@ export function ObservationReport({ report, isStreaming, childName, taggedChildr
             alt="Classroom observation"
             className="max-h-[320px] w-auto object-contain rounded-sm"
           />
-          <button className="absolute left-3 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-white/90 border border-border/50 flex items-center justify-center hover:bg-white hover:shadow-md transition-all">
-            <ChevronLeft className="w-4 h-4 text-muted-foreground" />
-          </button>
-          <button className="absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-white/90 border border-border/50 flex items-center justify-center hover:bg-white hover:shadow-md transition-all">
-            <ChevronRight className="w-4 h-4 text-muted-foreground" />
-          </button>
         </motion.div>
       )}
 
@@ -225,12 +253,12 @@ export function ObservationReport({ report, isStreaming, childName, taggedChildr
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-[11px] font-extrabold uppercase tracking-[0.12em] text-primary/60 flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-primary/40" />
-                Context
+                {sectionLabels.context}
               </h3>
               {isDone && (
                 <EditButtons
                   editing={editingSection === 'context'}
-                  onSave={() => saveEdit('context')}
+                  onSave={saveEdit}
                   onEdit={() => setEditingSection('context')}
                   onCancel={cancelEdit}
                 />
@@ -265,12 +293,12 @@ export function ObservationReport({ report, isStreaming, childName, taggedChildr
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-[11px] font-extrabold uppercase tracking-[0.12em] text-accent/70 flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-accent/40" />
-                Observation
+                {sectionLabels.observation}
               </h3>
               {isDone && (
                 <EditButtons
                   editing={editingSection === 'observation'}
-                  onSave={() => saveEdit('observation')}
+                  onSave={saveEdit}
                   onEdit={() => setEditingSection('observation')}
                   onCancel={cancelEdit}
                 />
@@ -301,9 +329,9 @@ export function ObservationReport({ report, isStreaming, childName, taggedChildr
           transition={{ duration: 0.3, delay: 0.2 }}
           className="mx-5 mt-2 mb-4"
         >
-          <h3 className="text-[11px] font-extrabold uppercase tracking-[0.12em] text-[hsl(42,80%,40%)]/70 mb-3 flex items-center gap-1.5 px-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-[hsl(42,95%,65%)]/50" />
-            Learning Analysis
+          <h3 className="text-[11px] font-extrabold uppercase tracking-[0.12em] text-muted-foreground mb-3 flex items-center gap-1.5 px-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-primary/40" />
+            {sectionLabels.analysis}
           </h3>
           <div className="space-y-2.5">
             {editAnalysis.map((item, i) => {
@@ -327,7 +355,7 @@ export function ObservationReport({ report, isStreaming, childName, taggedChildr
                     {isDone && !isStreaming && (
                       <EditButtons
                         editing={isEditingThis}
-                        onSave={() => saveEdit(`analysis-${i}`)}
+                        onSave={saveEdit}
                         onEdit={() => setEditingSection(`analysis-${i}`)}
                         onCancel={cancelEdit}
                       />
@@ -350,7 +378,7 @@ export function ObservationReport({ report, isStreaming, childName, taggedChildr
             {isStreaming && (
               <div className="flex items-center gap-2 pt-1 px-1">
                 <StreamingCursor />
-                <span className="text-xs text-muted-foreground font-medium">Writing analysis...</span>
+                <span className="text-xs text-muted-foreground font-medium">{sectionLabels.writingAnalysis}</span>
               </div>
             )}
           </div>
@@ -376,7 +404,7 @@ export function ObservationReport({ report, isStreaming, childName, taggedChildr
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.3 }}
-          className="px-6 py-4 flex items-center justify-between border-t border-border/30 bg-gradient-to-r from-white/60 to-[hsl(38,50%,97%)]"
+          className="px-6 py-4 flex items-center justify-between border-t border-border/30 bg-gradient-to-r from-white/60 to-secondary/40"
         >
           <span className="text-[11px] text-muted-foreground font-medium">
             {dateStr}

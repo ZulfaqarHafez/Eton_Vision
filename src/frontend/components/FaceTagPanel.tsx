@@ -45,6 +45,10 @@ interface SessionOverride {
   name: string;
 }
 
+function isPointInBox(px: number, py: number, box: { x: number; y: number; width: number; height: number }) {
+  return px >= box.x && px <= box.x + box.width && py >= box.y && py <= box.y + box.height;
+}
+
 export function FaceTagPanel({ imageFile, imagePreview, onTagsChange }: FaceTagPanelProps) {
   const { modelsLoaded, getAllDetections } = useFaceDetection();
   const [scanning, setScanning] = useState(false);
@@ -67,6 +71,76 @@ export function FaceTagPanel({ imageFile, imagePreview, onTagsChange }: FaceTagP
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
+  const resetPendingTaggingState = useCallback(() => {
+    setPendingTag(null);
+    setDrawBox(null);
+    setSelectedChildId('');
+  }, []);
+
+  const scanImage = useCallback(async (file: File) => {
+    setScanning(true);
+    setDetectedFaces([]);
+    setTaggedChildren([]);
+    setHasScanned(false);
+    resetPendingTaggingState();
+
+    try {
+      const img = await faceapi.bufferToImage(file);
+      const detections = await getAllDetections(img);
+
+      if (!detections || detections.length === 0) {
+        setHasScanned(true);
+        return;
+      }
+
+      const results: DetectedFace[] = [];
+      const tags: TaggedChild[] = [];
+      const usedChildIds = new Set<string>();
+
+      // Sort by confidence descending for deduplication
+      const sorted = [...detections].sort((a, b) => b.detection.score - a.detection.score);
+
+      for (const detection of sorted) {
+        const embedding = Array.from(detection.descriptor);
+        const box = detection.detection.box;
+        const thumbnail = getFaceCanvas(img, box);
+
+        // Check for session overrides first
+        const override = sessionOverrides.find((ov) =>
+          isPointInBox(box.x + 10, box.y + 10, ov.box)
+        );
+
+        if (override && !usedChildIds.has(override.child_id)) {
+          usedChildIds.add(override.child_id);
+          const match = { child_id: override.child_id, name: override.name, similarity: 1.0 };
+          results.push({ box, descriptor: embedding, match, thumbnail });
+          const overrideChild = allChildren.find((c) => c.id === override.child_id);
+          tags.push({ id: override.child_id, name: override.name, class_group: overrideChild?.class_group || '', confidence: 1.0, thumbnail });
+          continue;
+        }
+
+        const match = await matchFace(embedding);
+
+        if (match && !usedChildIds.has(match.child_id)) {
+          usedChildIds.add(match.child_id);
+          results.push({ box, descriptor: embedding, match, thumbnail });
+          const matchedChild = allChildren.find((c) => c.id === match.child_id);
+          tags.push({ id: match.child_id, name: match.name, class_group: matchedChild?.class_group || '', confidence: match.similarity, thumbnail });
+        } else {
+          results.push({ box, descriptor: embedding, match: null, thumbnail });
+        }
+      }
+
+      setDetectedFaces(results);
+      setTaggedChildren(tags);
+    } catch (err) {
+      console.error('Face scan error:', err);
+    } finally {
+      setScanning(false);
+      setHasScanned(true);
+    }
+  }, [allChildren, getAllDetections, resetPendingTaggingState, sessionOverrides]);
+
   // Fetch enrolled children
   useEffect(() => {
     async function fetchChildren() {
@@ -86,16 +160,15 @@ export function FaceTagPanel({ imageFile, imagePreview, onTagsChange }: FaceTagP
       setDetectedFaces([]);
       setTaggedChildren([]);
       setHasScanned(false);
-      setPendingTag(null);
-      setDrawBox(null);
+      resetPendingTaggingState();
       lastScannedFile.current = null;
     }
-  }, [imageFile, modelsLoaded]);
+  }, [imageFile, modelsLoaded, resetPendingTaggingState, scanImage]);
 
   // Propagate tag changes to parent
   useEffect(() => {
     onTagsChange(taggedChildren);
-  }, [taggedChildren]);
+  }, [onTagsChange, taggedChildren]);
 
   // Redraw canvas whenever detections or draw state change
   const drawCanvas = useCallback(() => {
@@ -173,10 +246,6 @@ export function FaceTagPanel({ imageFile, imagePreview, onTagsChange }: FaceTagP
   // Also redraw on image load (image may not have dimensions on first render)
   const handleImageLoad = () => {
     requestAnimationFrame(drawCanvas);
-  };
-
-  const isPointInBox = (px: number, py: number, box: { x: number; y: number; width: number; height: number }) => {
-    return px >= box.x && px <= box.x + box.width && py >= box.y && py <= box.y + box.height;
   };
 
   const getCanvasCoords = (e: React.MouseEvent) => {
@@ -365,81 +434,12 @@ export function FaceTagPanel({ imageFile, imagePreview, onTagsChange }: FaceTagP
       toast.error(err instanceof Error ? err.message : 'Verification failed');
     }
 
-    setPendingTag(null);
-    setDrawBox(null);
-    setSelectedChildId('');
+    resetPendingTaggingState();
   };
 
-  const cancelPending = () => {
-    setPendingTag(null);
-    setDrawBox(null);
-    setSelectedChildId('');
-  };
-
-  const scanImage = async (file: File) => {
-    setScanning(true);
-    setDetectedFaces([]);
-    setTaggedChildren([]);
-    setHasScanned(false);
-    setPendingTag(null);
-    setDrawBox(null);
-
-    try {
-      const img = await faceapi.bufferToImage(file);
-      const detections = await getAllDetections(img);
-
-      if (!detections || detections.length === 0) {
-        setHasScanned(true);
-        return;
-      }
-
-      const results: DetectedFace[] = [];
-      const tags: TaggedChild[] = [];
-      const usedChildIds = new Set<string>();
-
-      // Sort by confidence descending for deduplication
-      const sorted = [...detections].sort((a, b) => b.detection.score - a.detection.score);
-
-      for (const detection of sorted) {
-        const embedding = Array.from(detection.descriptor);
-        const box = detection.detection.box;
-        const thumbnail = getFaceCanvas(img, box);
-
-        // Check for session overrides first
-        const override = sessionOverrides.find((ov) =>
-          isPointInBox(box.x + 10, box.y + 10, ov.box)
-        );
-
-        if (override && !usedChildIds.has(override.child_id)) {
-          usedChildIds.add(override.child_id);
-          const match = { child_id: override.child_id, name: override.name, similarity: 1.0 };
-          results.push({ box, descriptor: embedding, match, thumbnail });
-          const overrideChild = allChildren.find((c) => c.id === override.child_id);
-          tags.push({ id: override.child_id, name: override.name, class_group: overrideChild?.class_group || '', confidence: 1.0, thumbnail });
-          continue;
-        }
-
-        const match = await matchFace(embedding);
-
-        if (match && !usedChildIds.has(match.child_id)) {
-          usedChildIds.add(match.child_id);
-          results.push({ box, descriptor: embedding, match, thumbnail });
-          const matchedChild = allChildren.find((c) => c.id === match.child_id);
-          tags.push({ id: match.child_id, name: match.name, class_group: matchedChild?.class_group || '', confidence: match.similarity, thumbnail });
-        } else {
-          results.push({ box, descriptor: embedding, match: null, thumbnail });
-        }
-      }
-
-      setDetectedFaces(results);
-      setTaggedChildren(tags);
-    } catch (err) {
-      console.error('Face scan error:', err);
-    } finally {
-      setScanning(false);
-      setHasScanned(true);
-    }
-  };
+  const cancelPending = useCallback(() => {
+    resetPendingTaggingState();
+  }, [resetPendingTaggingState]);
 
   const removeTag = (childId: string) => {
     setTaggedChildren((prev) => prev.filter((t) => t.id !== childId));
