@@ -154,6 +154,30 @@ Dev network edge
 3. Refined output is normalized into strict template.
 4. UI displays revised report while preserving expected section structure.
 
+### Translation and language logic (EN/ZH)
+
+1. Output language is selected in Reports workspace (English or Mandarin).
+2. The selection is persisted in localStorage via `vlm_config.reportLanguage`.
+3. On generate:
+	- The app sends a language-specific system prompt to the selected provider.
+	- `EN` uses the English schema (`CONTEXT`, `OBSERVATION`, `LEARNING ANALYSIS`).
+	- `ZH` uses the Mandarin schema (`情境`, `观察记录`, `学习分析`).
+	- Colab receives explicit `language` + `system_prompt` fields.
+4. Provider output is always normalized before UI render:
+	- `parseReport` extracts sections using EN/ZH aliases.
+	- Learning-analysis labels are mapped to canonical SPARK labels for the chosen language.
+	- Output is rebuilt using strict section labels from `REPORT_SECTION_LABELS`.
+5. On refine while output language is `ZH`:
+	- The refinement generation is run in English first for structure stability.
+	- The refined English report is converted to Mandarin using OpenRouter text conversion with SeaLion model candidates.
+	- If SeaLion conversion fails, fallback is:
+		1) current provider text conversion
+		2) label-only conversion (`CONTEXT` -> `情境`, etc.)
+	- Final Mandarin text is normalized again to strict ZH template.
+6. Result: language mode is schema-safe and resilient.
+	- The app prioritizes complete, parseable section structure over literal line-by-line translation.
+	- If full Mandarin conversion is unavailable, users still receive a valid report layout.
+
 ### Face recognition flow
 
 1. face-api models are loaded from public/models.
