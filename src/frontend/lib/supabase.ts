@@ -63,11 +63,24 @@ export interface PublishedReport {
   created_at: string;
 }
 
-export async function matchFace(embedding: number[]): Promise<FaceMatch | null> {
-  const { data, error } = await supabase.rpc('match_child_multi', {
+export async function matchFace(
+  embedding: number[], 
+  classGroup?: string // 👈 1. Add this new parameter
+): Promise<FaceMatch | null> {
+  
+  // 2. Build the parameter object dynamically
+  const rpcParams: any = {
     query_embedding: embedding,
-    match_threshold: 0.93,
-  });
+    match_threshold: 0.95, // 👈 3. Try bumping this slightly higher to 0.95 for strictness!
+  };
+
+  // 4. If a class group is provided, send it to the database
+  if (classGroup) {
+    rpcParams.class_group = classGroup; 
+  }
+
+  // 5. Pass the dynamic params to your RPC
+  const { data, error } = await supabase.rpc('match_child_multi', rpcParams);
 
   if (error) {
     console.error('Match error:', error);

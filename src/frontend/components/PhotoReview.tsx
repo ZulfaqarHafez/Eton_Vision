@@ -94,7 +94,8 @@ export function PhotoReview({
   totalUniqueFound,
   onClearAll,
 }: PhotoReviewProps) {
-  const { modelsLoaded } = useFaceDetection();
+  const { modelsLoaded, getAllDetections } = useFaceDetection();
+  
   const [allChildren, setAllChildren] = useState<Child[]>([]);
   const [scanning, setScanning] = useState(false);
   const [scanProgress, setScanProgress] = useState(0);
@@ -109,7 +110,6 @@ export function PhotoReview({
 
   const includedCount = currentPhotoTags.filter(t => !excludedStudentIds.has(t.id)).length;
 
-  // Fetch enrolled children
   useEffect(() => {
     async function fetchChildren() {
       const { data } = await supabase.from('children').select('*').order('name');
@@ -134,27 +134,34 @@ export function PhotoReview({
 
       try {
         const img = await faceapi.bufferToImage(photo.file);
-        const detections = await faceapi
-          .detectAllFaces(img)
-          .withFaceLandmarks()
-          .withFaceDescriptors();
+        const detections = await getAllDetections(img);
+        
+        console.log("🕵️‍♂️ YOLO FOUND THIS MANY FACES:", detections.length); // 👈 ADD THIS LINE!
 
         const faces: DetectedFaceInfo[] = [];
         const tags: TaggedChild[] = [];
         const usedChildIds = new Set<string>();
 
         if (detections && detections.length > 0) {
-          const sorted = [...detections].sort((a, b) => b.detection.score - a.detection.score);
           const imageWidth = img.naturalWidth || img.width;
           const imageHeight = img.naturalHeight || img.height;
 
-          for (let detIdx = 0; detIdx < sorted.length; detIdx++) {
-            const det = sorted[detIdx];
+          for (let detIdx = 0; detIdx < detections.length; detIdx++) {
+            const det = detections[detIdx];
+            
             const embedding = Array.from(det.descriptor);
             const box = det.detection.box;
+            
             const thumbnail = getFaceCanvas(img, box);
-            const match = await matchFace(embedding);
+
+            // 🛡️ The Firewall: Check if the signature is completely blank (all zeros)
+            const isBlankSignature = embedding.every(val => val === 0);
+
+            // If it is blank, instantly assign null. Only ask the database to match real faces!
+            const match = isBlankSignature ? null : await matchFace(embedding);
+
             const faceId = buildDetectedFaceId(photo.file.name, i, detIdx, box);
+                        
             const normalizedBox = {
               x: clampToUnit(box.x / imageWidth),
               y: clampToUnit(box.y / imageHeight),
@@ -190,7 +197,7 @@ export function PhotoReview({
                 confidence: match.similarity,
                 thumbnail,
               });
-            } else if (!match) {
+            } else {
               faces.push(detectedFaceBase);
             }
           }
@@ -207,9 +214,8 @@ export function PhotoReview({
     onScanComplete(allResults);
     setScanning(false);
     scanLockRef.current = false;
-  }, [allChildren, onScanComplete]);
+  }, [allChildren, onScanComplete, getAllDetections]);
 
-  // Scan photos that haven't been scanned yet
   useEffect(() => {
     if (!modelsLoaded || scanning || scanLockRef.current) return;
 
@@ -354,7 +360,6 @@ export function PhotoReview({
 
   return (
     <div className="space-y-4">
-      {/* ── Photo Strip ───────────────────────────────────── */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
@@ -385,7 +390,6 @@ export function PhotoReview({
           />
         </div>
 
-        {/* Thumbnails */}
         <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
           {photos.map((photo, idx) => {
             const isPrimary = idx === primaryIndex;
@@ -409,28 +413,24 @@ export function PhotoReview({
                 >
                   <img src={photo.preview} alt="" className="w-full h-full object-cover" />
 
-                  {/* Primary star */}
                   {isPrimary && (
                     <div className="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-primary flex items-center justify-center">
                       <Star className="w-2.5 h-2.5 text-white fill-white" />
                     </div>
                   )}
 
-                  {/* Scanning spinner */}
                   {!isScanned && scanning && (
                     <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
                       <Loader2 className="w-4 h-4 text-white animate-spin" />
                     </div>
                   )}
 
-                  {/* Match count badge */}
                   {isScanned && matchCount > 0 && (
                     <div className="absolute bottom-0.5 right-0.5 bg-green-500/90 text-white text-[8px] font-bold px-1.5 py-0.5 rounded-full flex items-center gap-0.5 backdrop-blur-sm">
                       <Users className="w-2.5 h-2.5" />{matchCount}
                     </div>
                   )}
 
-                  {/* Scanned check */}
                   {isScanned && matchCount === 0 && (
                     <div className="absolute bottom-0.5 right-0.5 bg-white/80 text-muted-foreground text-[8px] font-bold px-1 py-0.5 rounded-full backdrop-blur-sm">
                       <CheckCircle2 className="w-3 h-3 text-muted-foreground/50" />
@@ -438,7 +438,6 @@ export function PhotoReview({
                   )}
                 </motion.button>
 
-                {/* Remove (hover) */}
                 {photos.length > 1 && (
                   <button
                     type="button"
@@ -452,7 +451,6 @@ export function PhotoReview({
             );
           })}
 
-          {/* Add more inline button */}
           <button
             onClick={() => addMoreInputRef.current?.click()}
             className="flex-shrink-0 w-[72px] h-[72px] rounded-xl border-2 border-dashed border-border/60 hover:border-primary/40 flex flex-col items-center justify-center gap-1 transition-colors text-muted-foreground hover:text-primary"
@@ -462,7 +460,6 @@ export function PhotoReview({
           </button>
         </div>
 
-        {/* Teacher view mode */}
         {!scanning && savedScans.length > 0 && (
           <div className="inline-flex rounded-lg border border-border/60 bg-secondary/40 p-1">
             <button
@@ -498,77 +495,87 @@ export function PhotoReview({
 
         {/* Primary photo preview */}
         {teacherMode === 'focus' && primaryPhoto && (
-          <div className="space-y-2">
-            <div className="relative rounded-xl overflow-hidden border border-border/40 bg-black/5">
-            <img
-              src={primaryPhoto.preview}
-              alt="Primary photo"
-              className="w-full max-h-[260px] object-contain"
-            />
-              {primaryPhoto.faces.map((face) => {
-                const left = clampToUnit(face.box.x);
-                const top = clampToUnit(face.box.y);
-                const right = clampToUnit(face.box.x + face.box.width);
-                const bottom = clampToUnit(face.box.y + face.box.height);
-                const width = Math.max(0.01, right - left);
-                const height = Math.max(0.01, bottom - top);
-                const isIncluded = !!face.childId && !excludedStudentIds.has(face.childId);
-                const selectedForManual = pendingUnknownFaceId === face.id;
+          <div className="space-y-2 relative">
+            
+            {/* 📌 Pinned Badge: Stays in the corner even when you scroll! */}
+            <div className="absolute top-4 left-4 z-10 pointer-events-none">
+              <Badge className="bg-primary/90 text-white text-[9px] font-bold px-2 py-0.5 shadow-sm">
+                <Star className="w-2.5 h-2.5 mr-1 fill-white" /> Main Focus
+              </Badge>
+            </div>
 
-                return (
-                  <button
-                    key={face.id}
-                    type="button"
-                    disabled={isIncluded}
-                    onClick={() => {
-                      if (!isIncluded) handleUnknownFaceClick(face.id);
-                    }}
-                    title={
-                      isIncluded
-                        ? face.childName || 'Student'
-                        : 'Needs review - click to assign'
-                    }
-                    className={`absolute border-2 rounded-md transition-all ${
-                      isIncluded
-                        ? 'border-green-500/90 bg-green-500/10'
-                        : selectedForManual
-                          ? 'border-primary bg-primary/20 ring-2 ring-primary/30'
-                          : 'border-red-500/90 bg-red-500/12 hover:bg-red-500/20'
-                    }`}
-                    style={{
-                      left: `${left * 100}%`,
-                      top: `${top * 100}%`,
-                      width: `${width * 100}%`,
-                      height: `${height * 100}%`,
-                    }}
-                  >
-                    <span
-                      className={`absolute left-1 top-1 text-[9px] leading-none px-1.5 py-0.5 rounded text-white font-bold ${
+            {/* 🪟 The Scrollable Window: Keeps the massive image contained */}
+            <div className="relative rounded-xl overflow-auto border border-border/40 bg-black/5 p-2 max-h-[600px] custom-scrollbar">
+              
+              {/* 🚀 THE MAGIC: min-w-[1200px] forces the faces to spread far apart! */}
+              <div className="relative inline-block shadow-sm rounded-md overflow-hidden min-w-[1200px] w-full">
+                <img
+                  src={primaryPhoto.preview}
+                  alt="Primary photo"
+                  className="w-full h-auto block"
+                />
+                
+                {primaryPhoto.faces.map((face) => {
+                  const left = clampToUnit(face.box.x);
+                  const top = clampToUnit(face.box.y);
+                  const right = clampToUnit(face.box.x + face.box.width);
+                  const bottom = clampToUnit(face.box.y + face.box.height);
+                  const width = Math.max(0.01, right - left);
+                  const height = Math.max(0.01, bottom - top);
+                  const isIncluded = !!face.childId && !excludedStudentIds.has(face.childId);
+                  const selectedForManual = pendingUnknownFaceId === face.id;
+
+                  return (
+                    <button
+                      key={face.id}
+                      type="button"
+                      disabled={isIncluded}
+                      onClick={() => {
+                        if (!isIncluded) handleUnknownFaceClick(face.id);
+                      }}
+                      title={
                         isIncluded
-                          ? 'bg-green-600/90'
+                          ? face.childName || 'Student'
+                          : 'Needs review - click to assign'
+                      }
+                      // 👻 I have kept the transparent styling here for you!
+                      className={`absolute border-2 rounded-md transition-all ${
+                        isIncluded
+                          ? 'border-green-500/30 bg-green-500/10'
                           : selectedForManual
-                            ? 'bg-primary'
-                            : 'bg-red-600/90'
+                            ? 'border-primary bg-primary/20 ring-2 ring-primary/30'
+                            : 'border-red-500/40 bg-red-500/10 hover:bg-red-500/20'
                       }`}
+                      style={{
+                        left: `${left * 100}%`,
+                        top: `${top * 100}%`,
+                        width: `${width * 100}%`,
+                        height: `${height * 100}%`,
+                      }}
                     >
-                      {isIncluded
-                        ? face.childName
-                        : 'Needs review'}
-                    </span>
-                  </button>
-                );
-              })}
+                      <span
+                        className={`absolute left-1 top-1 text-[9px] leading-none px-1.5 py-0.5 rounded text-white font-bold backdrop-blur-sm ${
+                          isIncluded
+                            ? 'bg-green-600/50'
+                            : selectedForManual
+                              ? 'bg-primary'
+                              : 'bg-red-600/50'
+                        }`}
+                      >
+                        {isIncluded
+                          ? face.childName
+                          : 'Needs review'}
+                      </span>
+                    </button>
+                  );
+                })}
 
-              {primaryPhoto.faces.length === 0 && (
-                <div className="absolute inset-0 flex items-center justify-center text-[11px] text-muted-foreground font-medium bg-black/20">
-                  No faces detected in this photo
-                </div>
-              )}
-
-              <div className="absolute top-2 left-2">
-                <Badge className="bg-primary/90 text-white text-[9px] font-bold px-2 py-0.5 shadow-sm">
-                  <Star className="w-2.5 h-2.5 mr-1 fill-white" /> Main Focus for report
-                </Badge>
+                {primaryPhoto.faces.length === 0 && (
+                  <div className="absolute inset-0 flex items-center justify-center text-[13px] text-muted-foreground font-semibold bg-black/10">
+                    <ScanFace className="w-5 h-5 mr-2 text-primary" />
+                    No faces detected in this photo
+                  </div>
+                )}
               </div>
             </div>
 
@@ -626,7 +633,6 @@ export function PhotoReview({
           </div>
         )}
 
-        {/* Scan progress */}
         {scanning && (
           <div className="space-y-1.5">
             <div className="flex items-center gap-2">
@@ -639,7 +645,6 @@ export function PhotoReview({
           </div>
         )}
 
-        {/* Models loading */}
         {!modelsLoaded && (
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground py-1">
             <Loader2 className="w-3 h-3 animate-spin" />
@@ -713,7 +718,6 @@ export function PhotoReview({
         )}
       </div>
 
-      {/* ── Students Found ────────────────────────────────── */}
       {teacherMode === 'focus' && !scanning && savedScans.length > 0 && (
         <div className="flex items-center justify-between text-[10px] text-muted-foreground">
           <span className="font-medium">Main Focus: {includedCount} student{includedCount !== 1 ? 's' : ''} selected</span>
@@ -763,14 +767,12 @@ export function PhotoReview({
         </div>
       )}
 
-      {/* No faces found */}
       {teacherMode === 'focus' && !scanning && primaryPhoto && currentPhotoTags.length === 0 && (
         <div className="text-xs text-muted-foreground py-2">
           No students currently selected for this photo.
         </div>
       )}
 
-      {/* Manual add student */}
       {teacherMode === 'focus' && !scanning && savedScans.length > 0 && (
         <div>
           {showAddManual ? (
