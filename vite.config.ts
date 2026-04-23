@@ -47,6 +47,19 @@ export default defineConfig(({ mode }) => {
     alias: {
       "@": path.resolve(__dirname, "./src"),
     },
+    // face-api.js 0.22.2 imports @tensorflow/tfjs-core as a peer dep. Without
+    // dedupe, Vite's dev pre-bundler ends up with two copies — face-api uses
+    // one, our direct `import * as tf from '@tensorflow/tfjs-core'` uses
+    // another — so tf.setBackend() configures a different engine than the
+    // one face-api's computeFaceDescriptor hits. Forcing a single instance
+    // fixes the "Cannot read properties of undefined (reading 'backend')"
+    // crash inside face-api's WebGL program runner.
+    dedupe: ["@tensorflow/tfjs-core"],
+  },
+  optimizeDeps: {
+    // Keep tfjs-core in the pre-bundle graph with face-api so Vite sees them
+    // as the same module instance.
+    include: ["face-api.js", "@tensorflow/tfjs-core"],
   },
   build: {
     // Face-recognition workloads include a large tfjs-core chunk even after code splitting.

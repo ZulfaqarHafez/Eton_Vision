@@ -1,5 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import * as faceapi from 'face-api.js';
+// Direct import of the exact tfjs-core module face-api.js depends on.
+// face-api.js 0.22.2 hides its tf namespace, so we reach it via its shared
+// node_modules copy. Vite dedupes this so we get the same engine singleton
+// face-api uses internally — setting the backend here DOES affect face-api.
+import * as tf from '@tensorflow/tfjs-core';
 import * as ort from 'onnxruntime-web';
 
 type FaceInput = HTMLImageElement | HTMLCanvasElement | HTMLVideoElement;
@@ -20,6 +25,19 @@ export function useFaceDetection() {
     let cancelled = false;
     async function loadModels() {
       try {
+        // Set the TFJS backend BEFORE loading face-api nets so the weight
+        // tensors register against an active engine. Without this,
+        // computeFaceDescriptor crashes with "Cannot read properties of
+        // undefined (reading 'backend')". The trivial scalar op forces the
+        // engine to fully materialise before nets arrive.
+        try {
+          await tf.setBackend('webgl');
+        } catch {
+          await tf.setBackend('cpu');
+        }
+        tf.scalar(0).dispose();
+        console.log('[face-api] tfjs backend ready:', tf.getBackend());
+
         ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/';
         const [session] = await Promise.all([
           ort.InferenceSession.create('/models/yolov8_new.onnx'),

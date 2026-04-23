@@ -1,9 +1,9 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { motion } from 'framer-motion';
 import * as faceapi from 'face-api.js';
 import {
   Loader2, Users, Plus, ScanFace, X, Star, UserPlus,
-  CheckCircle2, ImagePlus,
+  CheckCircle2, ImagePlus, SquareDashed, Save,
 } from 'lucide-react';
 import { Badge } from '@/frontend/components/ui/badge';
 import { Avatar, AvatarImage, AvatarFallback } from '@/frontend/components/ui/avatar';
@@ -15,7 +15,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/frontend/components/ui/select';
-import { supabase, matchFace, type Child, type TaggedChild } from '@/frontend/lib/supabase';
+import {
+  supabase,
+  matchFaceCandidates,
+  type Child,
+  type TaggedChild,
+  type FaceCandidate,
+} from '@/frontend/lib/supabase';
 import { useFaceDetection } from '@/frontend/hooks/useFaceDetection';
 import { getFaceCanvas } from '@/frontend/lib/faceUtils';
 import type { UploadedPhoto } from './ImageUpload';
@@ -23,6 +29,22 @@ import { toast } from 'sonner';
 
 /* ── Types ──────────────────────────────────────────────── */
 
+/**
+ * A single detected (or manually drawn) face on a photo.
+ *
+ * - `descriptor`: 128-dim face-api embedding. For manually drawn boxes this is a
+ *   **blank** descriptor (all zeros). Blank descriptors are never sent to
+ *   face_signatures on Save — they would poison the vector index.
+ * - `isManuallyAdded`: true for boxes the teacher drew via "Add box". Excluded
+ *   from face_signatures inserts regardless of `needsSave`.
+ * - `needsSave`: true when this face still needs to be written to
+ *   face_signatures on the next batch Save. Auto-matched faces ship with
+ *   `needsSave: true` so Save enriches the vector list (mirrors the prior
+ *   per-face AUTO_VERIFIED insert). Flipped to false after a successful batch
+ *   insert.
+ * - `candidates`: top-5 nearest children at similarity >= 0.70, or [] when the
+ *   descriptor is blank or no matches were found.
+ */
 interface DetectedFaceInfo {
   id: string;
   childId: string | null;
@@ -37,6 +59,9 @@ interface DetectedFaceInfo {
     width: number;
     height: number;
   };
+  candidates: FaceCandidate[];
+  needsSave: boolean;
+  isManuallyAdded: boolean;
 }
 
 export interface ScannedPhoto {
@@ -76,6 +101,10 @@ function buildDetectedFaceId(
   return `${fileName}-${photoIndex}-${detectionIndex}-${Math.round(box.x)}-${Math.round(box.y)}-${Math.round(box.width)}-${Math.round(box.height)}`;
 }
 
+function isBlankDescriptor(descriptor: number[]): boolean {
+  return descriptor.every((v) => v === 0);
+}
+
 /* ── PhotoReview Component ──────────────────────────────── */
 
 export function PhotoReview({
@@ -95,17 +124,20 @@ export function PhotoReview({
   onClearAll,
 }: PhotoReviewProps) {
   const { modelsLoaded, getAllDetections } = useFaceDetection();
-  
+
   const [allChildren, setAllChildren] = useState<Child[]>([]);
   const [scanning, setScanning] = useState(false);
   const [scanProgress, setScanProgress] = useState(0);
   const [scanTotal, setScanTotal] = useState(0);
   const [showAddManual, setShowAddManual] = useState(false);
-  const [pendingUnknownFaceId, setPendingUnknownFaceId] = useState<string | null>(null);
-  const [manualFaceChildId, setManualFaceChildId] = useState('');
-  const [savingManualFace, setSavingManualFace] = useState(false);
+  const [selectedFaceId, setSelectedFaceId] = useState<string | null>(null);
   const [teacherMode, setTeacherMode] = useState<'focus' | 'overview'>('focus');
+  const [savingAll, setSavingAll] = useState(false);
+  const [drawMode, setDrawMode] = useState(false);
+  const [drawStart, setDrawStart] = useState<{ x: number; y: number } | null>(null);
+  const [drawCurrent, setDrawCurrent] = useState<{ x: number; y: number } | null>(null);
   const addMoreInputRef = useRef<HTMLInputElement>(null);
+  const primaryImgRef = useRef<HTMLImageElement>(null);
   const scanLockRef = useRef(false);
 
   const includedCount = currentPhotoTags.filter(t => !excludedStudentIds.has(t.id)).length;
@@ -135,8 +167,6 @@ export function PhotoReview({
       try {
         const img = await faceapi.bufferToImage(photo.file);
         const detections = await getAllDetections(img);
-        
-        console.log("🕵️‍♂️ YOLO FOUND THIS MANY FACES:", detections.length); // 👈 ADD THIS LINE!
 
         const faces: DetectedFaceInfo[] = [];
         const tags: TaggedChild[] = [];
@@ -148,26 +178,29 @@ export function PhotoReview({
 
           for (let detIdx = 0; detIdx < detections.length; detIdx++) {
             const det = detections[detIdx];
-            
+
             const embedding = Array.from(det.descriptor);
             const box = det.detection.box;
-            
+
             const thumbnail = getFaceCanvas(img, box);
 
-            // 🛡️ The Firewall: Check if the signature is completely blank (all zeros)
-            const isBlankSignature = embedding.every(val => val === 0);
-
-            // If it is blank, instantly assign null. Only ask the database to match real faces!
-            const match = isBlankSignature ? null : await matchFace(embedding);
+            // Blank-descriptor firewall: don't ask the RPC to match a zero vector.
+            const candidates = isBlankDescriptor(embedding)
+              ? []
+              : await matchFaceCandidates(embedding);
 
             const faceId = buildDetectedFaceId(photo.file.name, i, detIdx, box);
-                        
+
             const normalizedBox = {
               x: clampToUnit(box.x / imageWidth),
               y: clampToUnit(box.y / imageHeight),
               width: clampToUnit(box.width / imageWidth),
               height: clampToUnit(box.height / imageHeight),
             };
+
+            const top = candidates[0];
+            const autoMatched =
+              !!top && top.similarity >= 0.95 && !usedChildIds.has(top.child_id);
 
             const detectedFaceBase: DetectedFaceInfo = {
               id: faceId,
@@ -178,23 +211,27 @@ export function PhotoReview({
               thumbnail,
               descriptor: embedding,
               box: normalizedBox,
+              candidates,
+              needsSave: true,
+              isManuallyAdded: false,
             };
 
-            if (match && !usedChildIds.has(match.child_id)) {
-              usedChildIds.add(match.child_id);
-              const child = allChildren.find(c => c.id === match.child_id);
+            if (autoMatched) {
+              usedChildIds.add(top.child_id);
+              const child = allChildren.find(c => c.id === top.child_id);
+              const classGroup = child?.class_group || '';
               faces.push({
                 ...detectedFaceBase,
-                childId: match.child_id,
-                childName: match.name,
-                classGroup: child?.class_group || '',
-                similarity: match.similarity,
+                childId: top.child_id,
+                childName: top.name,
+                classGroup,
+                similarity: top.similarity,
               });
               tags.push({
-                id: match.child_id,
-                name: match.name,
-                class_group: child?.class_group || '',
-                confidence: match.similarity,
+                id: top.child_id,
+                name: top.name,
+                class_group: classGroup,
+                confidence: top.similarity,
                 thumbnail,
               });
             } else {
@@ -255,108 +292,277 @@ export function PhotoReview({
   };
 
   const primaryPhoto = savedScans[primaryIndex];
+  const selectedFace = primaryPhoto?.faces.find((f) => f.id === selectedFaceId) ?? null;
 
-  const pendingAssignableFace = primaryPhoto?.faces.find(
-    (face) => (!face.childId || excludedStudentIds.has(face.childId)) && face.id === pendingUnknownFaceId,
-  );
+  /**
+   * Reassign a face to a child in local state only. Flips `needsSave = true`
+   * so the next batch Save will insert a face_signatures row. Does NOT touch
+   * the database — that's what handleSaveAll is for. Passing `candidate: null`
+   * clears the assignment on that face.
+   */
+  const handleAssignFace = useCallback((faceId: string, candidate: FaceCandidate | null) => {
+    if (!primaryPhoto) return;
 
-  const clearPendingFaceSelection = useCallback(() => {
-    setPendingUnknownFaceId(null);
-    setManualFaceChildId('');
-    setSavingManualFace(false);
-  }, []);
+    const updatedScans = savedScans.map((scan, index) => {
+      if (index !== primaryIndex) return scan;
 
-  const handleUnknownFaceClick = useCallback((faceId: string) => {
-    setPendingUnknownFaceId(faceId);
-    setManualFaceChildId('');
-    setShowAddManual(false);
-  }, []);
+      const targetFace = scan.faces.find((f) => f.id === faceId);
+      if (!targetFace) return scan;
 
-  const handleAssignManualFace = useCallback(async () => {
-    if (!pendingAssignableFace || !manualFaceChildId || !primaryPhoto) return;
+      const previousChildId = targetFace.childId;
 
-    const selectedChild = allChildren.find((child) => child.id === manualFaceChildId);
-    if (!selectedChild) return;
+      let nextChildId: string | null = null;
+      let nextChildName: string | null = null;
+      let nextClassGroup = '';
+      let nextSimilarity = 0;
 
-    setSavingManualFace(true);
-    try {
-      const { error } = await supabase.from('face_signatures').insert({
-        child_id: selectedChild.id,
-        embedding: pendingAssignableFace.descriptor,
-        image_url: pendingAssignableFace.thumbnail,
-        angle_label: 'AUTO_VERIFIED',
-      });
-
-      if (error) throw error;
-
-      const updatedScans = savedScans.map((scan, index) => {
-        if (index !== primaryIndex) return scan;
-
-        const updatedFaces = scan.faces.map((face) =>
-          face.id === pendingAssignableFace.id
-            ? {
-                ...face,
-                childId: selectedChild.id,
-                childName: selectedChild.name,
-                classGroup: selectedChild.class_group || '',
-                similarity: 1,
-              }
-            : face,
-        );
-
-        const hasTag = scan.taggedChildren.some((tag) => tag.id === selectedChild.id);
-        const updatedTags = hasTag
-          ? scan.taggedChildren
-          : [
-              ...scan.taggedChildren,
-              {
-                id: selectedChild.id,
-                name: selectedChild.name,
-                class_group: selectedChild.class_group || '',
-                confidence: 1,
-                thumbnail: pendingAssignableFace.thumbnail,
-              },
-            ];
-
-        return {
-          ...scan,
-          faces: updatedFaces,
-          taggedChildren: updatedTags,
-        };
-      });
-
-      onScanComplete(updatedScans);
-
-      if (excludedStudentIds.has(selectedChild.id)) {
-        onToggleStudent(selectedChild.id);
+      if (candidate) {
+        const child = allChildren.find((c) => c.id === candidate.child_id);
+        nextChildId = candidate.child_id;
+        nextChildName = candidate.name;
+        nextClassGroup = child?.class_group || '';
+        nextSimilarity = candidate.similarity;
       }
 
-      toast.success(`${selectedChild.name} assigned and saved for retraining`);
-      clearPendingFaceSelection();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to save manual assignment');
-      setSavingManualFace(false);
+      const updatedFaces = scan.faces.map((face) =>
+        face.id === faceId
+          ? {
+              ...face,
+              childId: nextChildId,
+              childName: nextChildName,
+              classGroup: nextClassGroup,
+              similarity: nextSimilarity,
+              needsSave: true,
+            }
+          : face,
+      );
+
+      // Sync taggedChildren: drop the previous assignment if no other face still
+      // uses it, and add/swap in the new assignment.
+      let updatedTags = scan.taggedChildren;
+      if (previousChildId && previousChildId !== nextChildId) {
+        const stillUsed = updatedFaces.some(
+          (f) => f.id !== faceId && f.childId === previousChildId,
+        );
+        if (!stillUsed) {
+          updatedTags = updatedTags.filter((t) => t.id !== previousChildId);
+        }
+      }
+      if (nextChildId && !updatedTags.some((t) => t.id === nextChildId)) {
+        updatedTags = [
+          ...updatedTags,
+          {
+            id: nextChildId,
+            name: nextChildName!,
+            class_group: nextClassGroup,
+            confidence: nextSimilarity,
+            thumbnail: targetFace.thumbnail,
+          },
+        ];
+      }
+
+      return { ...scan, faces: updatedFaces, taggedChildren: updatedTags };
+    });
+
+    onScanComplete(updatedScans);
+
+    if (candidate && excludedStudentIds.has(candidate.child_id)) {
+      onToggleStudent(candidate.child_id);
     }
   }, [
     allChildren,
-    clearPendingFaceSelection,
     excludedStudentIds,
-    manualFaceChildId,
     onScanComplete,
     onToggleStudent,
-    pendingAssignableFace,
     primaryIndex,
     primaryPhoto,
     savedScans,
   ]);
 
+  // Every face the teacher has assigned and hasn't yet saved. Drives the
+  // Save button's count so it matches the tagged-students count visibly.
+  // Drawn/blank-descriptor faces are kept in the count but filtered out at
+  // insert time (see handleSaveAll) — a zero-vector embedding would poison
+  // the face_signatures similarity index.
+  const pendingSaveFaces = useMemo(() => {
+    if (!primaryPhoto) return [] as DetectedFaceInfo[];
+    return primaryPhoto.faces.filter((f) => f.needsSave && !!f.childId);
+  }, [primaryPhoto]);
+
+  /**
+   * Batch-insert every pending face on the primary photo into face_signatures.
+   * Counted: face.needsSave && childId != null (this is pendingSaveFaces).
+   * Actually inserted: the subset with a real descriptor and not a manually
+   * drawn box — blank embeddings would corrupt future similarity matches.
+   * On success, flips needsSave=false on ALL pendingSaveFaces so the Save
+   * count clears even for assignments that couldn't be persisted.
+   */
+  const handleSaveAll = useCallback(async () => {
+    if (!primaryPhoto || pendingSaveFaces.length === 0) return;
+
+    const insertable = pendingSaveFaces.filter(
+      (f) => !f.isManuallyAdded && !isBlankDescriptor(f.descriptor),
+    );
+    const skipped = pendingSaveFaces.length - insertable.length;
+
+    console.log(
+      'Saving', insertable.length, 'face_signatures:',
+      insertable.map((f) => f.childId),
+      skipped > 0 ? `(skipped ${skipped} drawn/blank)` : '',
+    );
+
+    setSavingAll(true);
+    try {
+      if (insertable.length > 0) {
+        const rows = insertable.map((f) => ({
+          child_id: f.childId as string,
+          embedding: f.descriptor,
+          image_url: f.thumbnail,
+          angle_label: 'AUTO_VERIFIED',
+        }));
+        const { error } = await supabase.from('face_signatures').insert(rows);
+        if (error) throw error;
+      }
+
+      const clearedIds = new Set(pendingSaveFaces.map((f) => f.id));
+      const updatedScans = savedScans.map((scan, index) => {
+        if (index !== primaryIndex) return scan;
+        const updatedFaces = scan.faces.map((face) =>
+          clearedIds.has(face.id) ? { ...face, needsSave: false } : face,
+        );
+        return { ...scan, faces: updatedFaces };
+      });
+      onScanComplete(updatedScans);
+
+      if (insertable.length > 0 && skipped > 0) {
+        toast.success(`Saved ${insertable.length} for retraining · ${skipped} drawn box${skipped === 1 ? '' : 'es'} kept as tag only`);
+      } else if (insertable.length > 0) {
+        toast.success(`Saved ${insertable.length} face${insertable.length === 1 ? '' : 's'} for retraining`);
+      } else {
+        toast.success(`${skipped} drawn box${skipped === 1 ? '' : 'es'} kept as tag only`);
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to save assignments');
+    } finally {
+      setSavingAll(false);
+    }
+  }, [onScanComplete, pendingSaveFaces, primaryIndex, primaryPhoto, savedScans]);
+
   useEffect(() => {
-    clearPendingFaceSelection();
-  }, [primaryIndex, teacherMode, clearPendingFaceSelection]);
+    setSelectedFaceId(null);
+    setDrawMode(false);
+    setDrawStart(null);
+    setDrawCurrent(null);
+  }, [primaryIndex, teacherMode]);
+
+  /*
+   * Draw-mode: mousedown records drawStart (normalised 0..1) and seeds
+   * drawCurrent; mousemove updates drawCurrent so the preview rect tracks the
+   * cursor; mouseup finalises the rect and pushes a new DetectedFaceInfo with
+   * a blank descriptor + isManuallyAdded=true. The teacher assigns a child to
+   * it via the chip panel's dropdown; on Save, drawn boxes count toward the
+   * total but are skipped at insert time (blank embeddings can't enrich the
+   * vector index).
+   */
+  const normalizedPointer = useCallback((e: React.MouseEvent) => {
+    const imgEl = primaryImgRef.current;
+    if (!imgEl) return null;
+    const rect = imgEl.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return null;
+    return {
+      x: clampToUnit((e.clientX - rect.left) / rect.width),
+      y: clampToUnit((e.clientY - rect.top) / rect.height),
+    };
+  }, []);
+
+  const handleDrawMouseDown = useCallback((e: React.MouseEvent) => {
+    if (!drawMode) return;
+    e.preventDefault();
+    const pt = normalizedPointer(e);
+    if (!pt) return;
+    setDrawStart(pt);
+    setDrawCurrent(pt);
+  }, [drawMode, normalizedPointer]);
+
+  const handleDrawMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!drawMode || !drawStart) return;
+    const pt = normalizedPointer(e);
+    if (!pt) return;
+    setDrawCurrent(pt);
+  }, [drawMode, drawStart, normalizedPointer]);
+
+  const handleDrawMouseUp = useCallback((e: React.MouseEvent) => {
+    if (!drawMode || !drawStart) return;
+    const pt = normalizedPointer(e) ?? drawCurrent ?? drawStart;
+
+    const x = Math.min(drawStart.x, pt.x);
+    const y = Math.min(drawStart.y, pt.y);
+    const width = Math.abs(pt.x - drawStart.x);
+    const height = Math.abs(pt.y - drawStart.y);
+
+    setDrawStart(null);
+    setDrawCurrent(null);
+    setDrawMode(false);
+
+    if (width * height < 0.0005 || !primaryPhoto || !primaryImgRef.current) {
+      return;
+    }
+
+    const imgEl = primaryImgRef.current;
+    const naturalW = imgEl.naturalWidth || imgEl.width;
+    const naturalH = imgEl.naturalHeight || imgEl.height;
+    const pixelBox = {
+      x: x * naturalW,
+      y: y * naturalH,
+      width: width * naturalW,
+      height: height * naturalH,
+    };
+
+    let thumbnail = '';
+    try {
+      thumbnail = getFaceCanvas(imgEl, pixelBox);
+    } catch (err) {
+      console.warn('Manual thumbnail crop failed:', err);
+    }
+
+    const faceId = `manual-${primaryPhoto.file.name}-${Date.now()}-${Math.round(x * 1000)}-${Math.round(y * 1000)}`;
+
+    const newFace: DetectedFaceInfo = {
+      id: faceId,
+      childId: null,
+      childName: null,
+      classGroup: '',
+      similarity: 0,
+      thumbnail,
+      descriptor: Array(128).fill(0),
+      box: { x, y, width, height },
+      candidates: [],
+      needsSave: false,
+      isManuallyAdded: true,
+    };
+
+    const updatedScans = savedScans.map((scan, index) =>
+      index === primaryIndex
+        ? { ...scan, faces: [...scan.faces, newFace] }
+        : scan,
+    );
+    onScanComplete(updatedScans);
+    setSelectedFaceId(faceId);
+  }, [drawCurrent, drawMode, drawStart, normalizedPointer, onScanComplete, primaryIndex, primaryPhoto, savedScans]);
 
   const availableChildrenForManual = allChildren.filter(
     c => !currentPhotoTags.some(t => t.id === c.id)
   );
+
+  const drawPreview =
+    drawMode && drawStart && drawCurrent
+      ? {
+          left: Math.min(drawStart.x, drawCurrent.x),
+          top: Math.min(drawStart.y, drawCurrent.y),
+          width: Math.abs(drawCurrent.x - drawStart.x),
+          height: Math.abs(drawCurrent.y - drawStart.y),
+        }
+      : null;
 
   return (
     <div className="space-y-4">
@@ -496,25 +702,34 @@ export function PhotoReview({
         {/* Primary photo preview */}
         {teacherMode === 'focus' && primaryPhoto && (
           <div className="space-y-2 relative">
-            
-            {/* 📌 Pinned Badge: Stays in the corner even when you scroll! */}
+
             <div className="absolute top-4 left-4 z-10 pointer-events-none">
               <Badge className="bg-primary/90 text-white text-[9px] font-bold px-2 py-0.5 shadow-sm">
                 <Star className="w-2.5 h-2.5 mr-1 fill-white" /> Main Focus
               </Badge>
             </div>
 
-            {/* 🪟 The Scrollable Window: Keeps the massive image contained */}
             <div className="relative rounded-xl overflow-auto border border-border/40 bg-black/5 p-2 max-h-[600px] custom-scrollbar">
-              
-              {/* 🚀 THE MAGIC: min-w-[1200px] forces the faces to spread far apart! */}
-              <div className="relative inline-block shadow-sm rounded-md overflow-hidden min-w-[1200px] w-full">
+
+              <div
+                className={`relative inline-block shadow-sm rounded-md overflow-hidden min-w-[1200px] w-full ${
+                  drawMode ? 'cursor-crosshair' : ''
+                }`}
+                onMouseDown={handleDrawMouseDown}
+                onMouseMove={handleDrawMouseMove}
+                onMouseUp={handleDrawMouseUp}
+                onMouseLeave={(e) => {
+                  if (drawMode && drawStart) handleDrawMouseUp(e);
+                }}
+              >
                 <img
+                  ref={primaryImgRef}
                   src={primaryPhoto.preview}
                   alt="Primary photo"
-                  className="w-full h-auto block"
+                  className="w-full h-auto block select-none"
+                  draggable={false}
                 />
-                
+
                 {primaryPhoto.faces.map((face) => {
                   const left = clampToUnit(face.box.x);
                   const top = clampToUnit(face.box.y);
@@ -523,29 +738,46 @@ export function PhotoReview({
                   const width = Math.max(0.01, right - left);
                   const height = Math.max(0.01, bottom - top);
                   const isIncluded = !!face.childId && !excludedStudentIds.has(face.childId);
-                  const selectedForManual = pendingUnknownFaceId === face.id;
+                  const isSelected = selectedFaceId === face.id;
+                  const isManual = face.isManuallyAdded;
+
+                  let borderClass: string;
+                  let labelBgClass: string;
+                  if (isSelected) {
+                    borderClass = 'border-primary bg-primary/20 ring-2 ring-primary/30';
+                    labelBgClass = 'bg-primary';
+                  } else if (isManual && !face.childId) {
+                    borderClass = 'border-amber-500/60 bg-amber-500/10 hover:bg-amber-500/20';
+                    labelBgClass = 'bg-amber-600/70';
+                  } else if (isIncluded) {
+                    borderClass = 'border-green-500/40 bg-green-500/10 hover:bg-green-500/20';
+                    labelBgClass = 'bg-green-600/60';
+                  } else {
+                    borderClass = 'border-red-500/40 bg-red-500/10 hover:bg-red-500/20';
+                    labelBgClass = 'bg-red-600/50';
+                  }
+
+                  let label: string;
+                  if (face.childName) {
+                    label = face.childName;
+                  } else if (isManual) {
+                    label = 'Drawn box';
+                  } else {
+                    label = 'Needs review';
+                  }
 
                   return (
                     <button
                       key={face.id}
                       type="button"
-                      disabled={isIncluded}
-                      onClick={() => {
-                        if (!isIncluded) handleUnknownFaceClick(face.id);
+                      disabled={drawMode}
+                      onClick={(e) => {
+                        if (drawMode) return;
+                        e.stopPropagation();
+                        setSelectedFaceId(face.id);
                       }}
-                      title={
-                        isIncluded
-                          ? face.childName || 'Student'
-                          : 'Needs review - click to assign'
-                      }
-                      // 👻 I have kept the transparent styling here for you!
-                      className={`absolute border-2 rounded-md transition-all ${
-                        isIncluded
-                          ? 'border-green-500/30 bg-green-500/10'
-                          : selectedForManual
-                            ? 'border-primary bg-primary/20 ring-2 ring-primary/30'
-                            : 'border-red-500/40 bg-red-500/10 hover:bg-red-500/20'
-                      }`}
+                      title={label}
+                      className={`absolute border-2 rounded-md transition-all ${borderClass}`}
                       style={{
                         left: `${left * 100}%`,
                         top: `${top * 100}%`,
@@ -554,23 +786,27 @@ export function PhotoReview({
                       }}
                     >
                       <span
-                        className={`absolute left-1 top-1 text-[9px] leading-none px-1.5 py-0.5 rounded text-white font-bold backdrop-blur-sm ${
-                          isIncluded
-                            ? 'bg-green-600/50'
-                            : selectedForManual
-                              ? 'bg-primary'
-                              : 'bg-red-600/50'
-                        }`}
+                        className={`absolute left-1 top-1 text-[9px] leading-none px-1.5 py-0.5 rounded text-white font-bold backdrop-blur-sm ${labelBgClass}`}
                       >
-                        {isIncluded
-                          ? face.childName
-                          : 'Needs review'}
+                        {label}
                       </span>
                     </button>
                   );
                 })}
 
-                {primaryPhoto.faces.length === 0 && (
+                {drawPreview && (
+                  <div
+                    className="absolute border-2 border-dashed border-primary bg-primary/10 pointer-events-none rounded-md"
+                    style={{
+                      left: `${drawPreview.left * 100}%`,
+                      top: `${drawPreview.top * 100}%`,
+                      width: `${drawPreview.width * 100}%`,
+                      height: `${drawPreview.height * 100}%`,
+                    }}
+                  />
+                )}
+
+                {primaryPhoto.faces.length === 0 && !drawMode && (
                   <div className="absolute inset-0 flex items-center justify-center text-[13px] text-muted-foreground font-semibold bg-black/10">
                     <ScanFace className="w-5 h-5 mr-2 text-primary" />
                     No faces detected in this photo
@@ -586,49 +822,136 @@ export function PhotoReview({
               <span className="inline-flex items-center gap-1">
                 <span className="w-2 h-2 rounded-sm bg-red-500/80" /> needs review
               </span>
+              <span className="inline-flex items-center gap-1">
+                <span className="w-2 h-2 rounded-sm bg-amber-500/80" /> drawn box
+              </span>
+              {drawMode && (
+                <span className="ml-auto text-primary font-semibold">
+                  Drag on the photo to draw a new box. Release to finalize.
+                </span>
+              )}
             </div>
           </div>
         )}
 
-        {teacherMode === 'focus' && pendingAssignableFace && (
+        {teacherMode === 'focus' && selectedFace && primaryPhoto && (
           <div className="rounded-xl border border-primary/30 bg-primary/5 p-3 space-y-2">
-            <p className="text-xs font-semibold text-foreground">
-              Assign selected face to a student and save to training data
-            </p>
             <div className="flex items-center gap-2">
-              <Select value={manualFaceChildId} onValueChange={setManualFaceChildId}>
-                <SelectTrigger className="h-8 text-xs flex-1 bg-white">
-                  <SelectValue placeholder="Select student for this face" />
+              {selectedFace.thumbnail && (
+                <img
+                  src={selectedFace.thumbnail}
+                  alt="Selected face"
+                  className="w-10 h-10 rounded-md object-cover border border-border/40"
+                />
+              )}
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-semibold text-foreground truncate">
+                  {selectedFace.childName
+                    ? `Assigned: ${selectedFace.childName}`
+                    : selectedFace.isManuallyAdded
+                      ? 'Drawn box (no assignment yet)'
+                      : 'Needs review'}
+                </p>
+                <p className="text-[10px] text-muted-foreground">
+                  {selectedFace.childName
+                    ? `${Math.round(selectedFace.similarity * 100)}% similarity · ${selectedFace.classGroup || '—'}`
+                    : 'Pick a candidate below, or use "Add student manually" at the bottom.'}
+                </p>
+              </div>
+              {selectedFace.childId && (
+                <button
+                  type="button"
+                  onClick={() => handleAssignFace(selectedFace.id, null)}
+                  className="h-7 px-2 text-[10px] font-semibold rounded-md border border-border/60 hover:bg-secondary"
+                >
+                  Clear
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setSelectedFaceId(null)}
+                className="h-7 px-2 text-[10px] text-muted-foreground hover:text-foreground"
+              >
+                Close
+              </button>
+            </div>
+
+            {selectedFace.candidates.length > 0 ? (
+              <div className="flex flex-wrap gap-1.5">
+                {selectedFace.candidates.map((candidate) => {
+                  const isCurrent = candidate.child_id === selectedFace.childId;
+                  const child = allChildren.find((c) => c.id === candidate.child_id);
+                  const classGroup = child?.class_group || '';
+                  return (
+                    <button
+                      key={candidate.child_id}
+                      type="button"
+                      onClick={() => handleAssignFace(selectedFace.id, candidate)}
+                      className={`flex items-center gap-1.5 pl-1.5 pr-2 py-1 rounded-full text-[11px] font-medium border transition-all ${
+                        isCurrent
+                          ? 'bg-primary text-primary-foreground border-primary shadow-sm'
+                          : 'bg-white text-foreground border-border hover:border-primary/60 hover:bg-primary/5'
+                      }`}
+                    >
+                      <span>{candidate.name}</span>
+                      <span className={`text-[10px] ${isCurrent ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>
+                        {Math.round(candidate.similarity * 100)}%
+                      </span>
+                      {classGroup && (
+                        <span className={`text-[10px] ${isCurrent ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>
+                          · {classGroup}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-[11px] text-muted-foreground italic">
+                No close matches found. Pick any student below.
+              </p>
+            )}
+
+            {/*
+             * Per-box student override dropdown. Lists every enrolled student.
+             * For students that appear in this face's candidates, the row shows
+             * their similarity % between the name and the class. Picking a
+             * student runs handleAssignFace (sync, no DB write) — the batch
+             * Save button in the toolbar is what actually writes to Supabase.
+             */}
+            <div className="pt-1">
+              <Select
+                value={selectedFace.childId ?? ''}
+                onValueChange={(childId) => {
+                  if (!childId) return;
+                  const child = allChildren.find((c) => c.id === childId);
+                  if (!child) return;
+                  const match = selectedFace.candidates.find((c) => c.child_id === childId);
+                  const candidate: FaceCandidate = {
+                    child_id: child.id,
+                    name: child.name,
+                    // Teacher override when not in candidates = full confidence.
+                    similarity: match ? match.similarity : 1,
+                  };
+                  handleAssignFace(selectedFace.id, candidate);
+                }}
+              >
+                <SelectTrigger className="h-8 text-xs bg-white">
+                  <SelectValue placeholder="Assign any enrolled student to this box..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {allChildren.map((child) => (
-                    <SelectItem key={child.id} value={child.id} className="text-xs">
-                      {child.name} — {child.class_group}
-                    </SelectItem>
-                  ))}
+                  {allChildren.map((child) => {
+                    const match = selectedFace.candidates.find((c) => c.child_id === child.id);
+                    const scoreText = match ? ` — ${Math.round(match.similarity * 100)}%` : '';
+                    const classText = child.class_group ? ` — ${child.class_group}` : '';
+                    return (
+                      <SelectItem key={child.id} value={child.id} className="text-xs">
+                        {child.name}{scoreText}{classText}
+                      </SelectItem>
+                    );
+                  })}
                 </SelectContent>
               </Select>
-              <button
-                type="button"
-                onClick={handleAssignManualFace}
-                disabled={!manualFaceChildId || savingManualFace}
-                className="h-8 px-3 rounded-md text-xs font-semibold bg-primary text-primary-foreground disabled:opacity-50"
-              >
-                {savingManualFace ? (
-                  <span className="flex items-center gap-1.5">
-                    <Loader2 className="w-3 h-3 animate-spin" /> Saving
-                  </span>
-                ) : (
-                  'Save Face'
-                )}
-              </button>
-              <button
-                type="button"
-                onClick={clearPendingFaceSelection}
-                className="h-8 px-2 text-xs text-muted-foreground hover:text-foreground"
-              >
-                Cancel
-              </button>
             </div>
           </div>
         )}
@@ -719,9 +1042,27 @@ export function PhotoReview({
       </div>
 
       {teacherMode === 'focus' && !scanning && savedScans.length > 0 && (
-        <div className="flex items-center justify-between text-[10px] text-muted-foreground">
-          <span className="font-medium">Main Focus: {includedCount} student{includedCount !== 1 ? 's' : ''} selected</span>
-          <span className="font-medium">All photos: {totalUniqueFound} unique seen</span>
+        <div className="flex items-center justify-between gap-3 text-[10px] text-muted-foreground">
+          <div className="flex items-center gap-3">
+            <span className="font-medium">Main Focus: {includedCount} student{includedCount !== 1 ? 's' : ''} selected</span>
+            <span className="font-medium">All photos: {totalUniqueFound} unique seen</span>
+          </div>
+          <button
+            type="button"
+            onClick={handleSaveAll}
+            disabled={pendingSaveFaces.length === 0 || savingAll}
+            className="h-8 px-3 rounded-md text-xs font-semibold bg-primary text-primary-foreground flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-primary/90 transition-colors"
+          >
+            {savingAll ? (
+              <>
+                <Loader2 className="w-3 h-3 animate-spin" /> Saving...
+              </>
+            ) : (
+              <>
+                <Save className="w-3 h-3" /> Save {pendingSaveFaces.length} assignment{pendingSaveFaces.length === 1 ? '' : 's'}
+              </>
+            )}
+          </button>
         </div>
       )}
 
@@ -774,9 +1115,27 @@ export function PhotoReview({
       )}
 
       {teacherMode === 'focus' && !scanning && savedScans.length > 0 && (
-        <div>
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={() => {
+              setDrawMode((prev) => !prev);
+              setSelectedFaceId(null);
+              setDrawStart(null);
+              setDrawCurrent(null);
+            }}
+            className={`flex items-center gap-1.5 text-xs font-medium transition-colors ${
+              drawMode
+                ? 'text-primary underline'
+                : 'text-primary hover:underline'
+            }`}
+          >
+            <SquareDashed className="w-3 h-3" />
+            {drawMode ? 'Cancel drawing' : 'Add box (draw around missed person)'}
+          </button>
+
           {showAddManual ? (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-1 min-w-[220px]">
               <Select onValueChange={handleManualAdd}>
                 <SelectTrigger className="h-8 text-xs flex-1">
                   <SelectValue placeholder="Select a student..." />

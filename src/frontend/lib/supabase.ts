@@ -28,6 +28,12 @@ export interface FaceMatch {
   similarity: number;
 }
 
+export interface FaceCandidate {
+  child_id: string;
+  name: string;
+  similarity: number;
+}
+
 export interface TaggedChild {
   id: string;
   name: string;
@@ -88,6 +94,33 @@ export async function matchFace(
   }
 
   return (data?.[0] as FaceMatch) ?? null;
+}
+
+/**
+ * Fetch up to 5 nearest children for a face embedding at match_threshold 0.70.
+ * The RPC returns rows ordered by similarity; the top-k slice happens here
+ * because `match_child_multi` has no top_k parameter.
+ */
+export async function matchFaceCandidates(
+  embedding: number[],
+  classGroup?: string,
+): Promise<FaceCandidate[]> {
+  const rpcParams: any = {
+    query_embedding: embedding,
+    match_threshold: 0.70,
+  };
+  if (classGroup) {
+    rpcParams.class_group = classGroup;
+  }
+
+  const { data, error } = await supabase.rpc('match_child_multi', rpcParams);
+
+  if (error) {
+    console.error('Match candidates error:', error);
+    return [];
+  }
+
+  return ((data ?? []) as FaceCandidate[]).slice(0, 5);
 }
 
 export async function publishReport(report: Omit<PublishedReport, 'id' | 'created_at'>): Promise<PublishedReport | null> {
