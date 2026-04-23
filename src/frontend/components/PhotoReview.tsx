@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import * as faceapi from 'face-api.js';
 import {
   Loader2, Users, Plus, ScanFace, X, Star, UserPlus,
-  CheckCircle2, ImagePlus, SquareDashed, Save,
+  CheckCircle2, ImagePlus, SquareDashed, Save, Maximize2, Trash2,
 } from 'lucide-react';
 import { Badge } from '@/frontend/components/ui/badge';
 import { Avatar, AvatarImage, AvatarFallback } from '@/frontend/components/ui/avatar';
@@ -15,6 +15,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/frontend/components/ui/select';
+import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+} from '@/frontend/components/ui/dialog';
 import {
   supabase,
   matchFaceCandidates,
@@ -136,8 +141,10 @@ export function PhotoReview({
   const [drawMode, setDrawMode] = useState(false);
   const [drawStart, setDrawStart] = useState<{ x: number; y: number } | null>(null);
   const [drawCurrent, setDrawCurrent] = useState<{ x: number; y: number } | null>(null);
+  const [isEnlarged, setIsEnlarged] = useState(false);
   const addMoreInputRef = useRef<HTMLInputElement>(null);
   const primaryImgRef = useRef<HTMLImageElement>(null);
+  const modalImgRef = useRef<HTMLImageElement>(null);
   const scanLockRef = useRef(false);
 
   const includedCount = currentPhotoTags.filter(t => !excludedStudentIds.has(t.id)).length;
@@ -464,8 +471,8 @@ export function PhotoReview({
    * total but are skipped at insert time (blank embeddings can't enrich the
    * vector index).
    */
-  const normalizedPointer = useCallback((e: React.MouseEvent) => {
-    const imgEl = primaryImgRef.current;
+  const normalizedPointerForImg = useCallback((e: React.MouseEvent, ref: React.RefObject<HTMLImageElement>) => {
+    const imgEl = ref.current;
     if (!imgEl) return null;
     const rect = imgEl.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return null;
@@ -474,6 +481,11 @@ export function PhotoReview({
       y: clampToUnit((e.clientY - rect.top) / rect.height),
     };
   }, []);
+
+  const normalizedPointer = useCallback(
+    (e: React.MouseEvent) => normalizedPointerForImg(e, primaryImgRef),
+    [normalizedPointerForImg],
+  );
 
   const handleDrawMouseDown = useCallback((e: React.MouseEvent) => {
     if (!drawMode) return;
@@ -490,6 +502,22 @@ export function PhotoReview({
     if (!pt) return;
     setDrawCurrent(pt);
   }, [drawMode, drawStart, normalizedPointer]);
+
+  const handleModalDrawMouseDown = useCallback((e: React.MouseEvent) => {
+    if (!drawMode) return;
+    e.preventDefault();
+    const pt = normalizedPointerForImg(e, modalImgRef);
+    if (!pt) return;
+    setDrawStart(pt);
+    setDrawCurrent(pt);
+  }, [drawMode, normalizedPointerForImg]);
+
+  const handleModalDrawMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!drawMode || !drawStart) return;
+    const pt = normalizedPointerForImg(e, modalImgRef);
+    if (!pt) return;
+    setDrawCurrent(pt);
+  }, [drawMode, drawStart, normalizedPointerForImg]);
 
   const handleDrawMouseUp = useCallback((e: React.MouseEvent) => {
     if (!drawMode || !drawStart) return;
@@ -549,6 +577,81 @@ export function PhotoReview({
     onScanComplete(updatedScans);
     setSelectedFaceId(faceId);
   }, [drawCurrent, drawMode, drawStart, normalizedPointer, onScanComplete, primaryIndex, primaryPhoto, savedScans]);
+
+  const handleModalDrawMouseUp = useCallback((e: React.MouseEvent) => {
+    if (!drawMode || !drawStart) return;
+    const pt = normalizedPointerForImg(e, modalImgRef) ?? drawCurrent ?? drawStart;
+
+    const x = Math.min(drawStart.x, pt.x);
+    const y = Math.min(drawStart.y, pt.y);
+    const width = Math.abs(pt.x - drawStart.x);
+    const height = Math.abs(pt.y - drawStart.y);
+
+    setDrawStart(null);
+    setDrawCurrent(null);
+    setDrawMode(false);
+
+    if (width * height < 0.0005 || !primaryPhoto || !modalImgRef.current) {
+      return;
+    }
+
+    const imgEl = modalImgRef.current;
+    const naturalW = imgEl.naturalWidth || imgEl.width;
+    const naturalH = imgEl.naturalHeight || imgEl.height;
+    const pixelBox = {
+      x: x * naturalW,
+      y: y * naturalH,
+      width: width * naturalW,
+      height: height * naturalH,
+    };
+
+    let thumbnail = '';
+    try {
+      thumbnail = getFaceCanvas(imgEl, pixelBox);
+    } catch (err) {
+      console.warn('Manual thumbnail crop failed:', err);
+    }
+
+    const faceId = `manual-${primaryPhoto.file.name}-${Date.now()}-${Math.round(x * 1000)}-${Math.round(y * 1000)}`;
+
+    const newFace: DetectedFaceInfo = {
+      id: faceId,
+      childId: null,
+      childName: null,
+      classGroup: '',
+      similarity: 0,
+      thumbnail,
+      descriptor: Array(128).fill(0),
+      box: { x, y, width, height },
+      candidates: [],
+      needsSave: false,
+      isManuallyAdded: true,
+    };
+
+    const updatedScans = savedScans.map((scan, index) =>
+      index === primaryIndex
+        ? { ...scan, faces: [...scan.faces, newFace] }
+        : scan,
+    );
+    onScanComplete(updatedScans);
+    setSelectedFaceId(faceId);
+  }, [drawCurrent, drawMode, drawStart, normalizedPointerForImg, onScanComplete, primaryIndex, primaryPhoto, savedScans]);
+
+  const handleRemoveFace = useCallback((faceId: string) => {
+    const updatedScans = savedScans.map((scan, index) => {
+      if (index !== primaryIndex) return scan;
+      const removed = scan.faces.find(f => f.id === faceId);
+      const newFaces = scan.faces.filter(f => f.id !== faceId);
+      let newTags = scan.taggedChildren;
+      if (removed?.childId) {
+        const stillUsed = newFaces.some(f => f.childId === removed.childId);
+        if (!stillUsed) newTags = newTags.filter(t => t.id !== removed.childId);
+      }
+      return { ...scan, faces: newFaces, taggedChildren: newTags };
+    });
+    onScanComplete(updatedScans);
+    setSelectedFaceId(null);
+  }, [onScanComplete, primaryIndex, savedScans]);
 
   const availableChildrenForManual = allChildren.filter(
     c => !currentPhotoTags.some(t => t.id === c.id)
@@ -709,10 +812,10 @@ export function PhotoReview({
               </Badge>
             </div>
 
-            <div className="relative rounded-xl overflow-auto border border-border/40 bg-black/5 p-2 max-h-[600px] custom-scrollbar">
+            <div className="relative rounded-xl overflow-hidden border border-border/40 bg-black/5 p-2">
 
               <div
-                className={`relative inline-block shadow-sm rounded-md overflow-hidden min-w-[1200px] w-full ${
+                className={`relative w-full rounded-md overflow-hidden ${
                   drawMode ? 'cursor-crosshair' : ''
                 }`}
                 onMouseDown={handleDrawMouseDown}
@@ -729,6 +832,15 @@ export function PhotoReview({
                   className="w-full h-auto block select-none"
                   draggable={false}
                 />
+
+                <button
+                  type="button"
+                  onClick={() => setIsEnlarged(true)}
+                  className="absolute top-2 right-2 z-20 p-1.5 rounded-lg bg-black/40 hover:bg-black/60 text-white transition-colors"
+                  title="Enlarge photo"
+                >
+                  <Maximize2 className="w-4 h-4" />
+                </button>
 
                 {primaryPhoto.faces.map((face) => {
                   const left = clampToUnit(face.box.x);
@@ -867,6 +979,15 @@ export function PhotoReview({
                   Clear
                 </button>
               )}
+              <button
+                type="button"
+                onClick={() => handleRemoveFace(selectedFace.id)}
+                className="h-7 px-2 text-[10px] font-semibold rounded-md border border-red-200 text-red-600 hover:bg-red-50 flex items-center gap-1"
+                title="Remove this bounding box"
+              >
+                <Trash2 className="w-3 h-3" />
+                Remove
+              </button>
               <button
                 type="button"
                 onClick={() => setSelectedFaceId(null)}
@@ -1165,6 +1286,371 @@ export function PhotoReview({
             </button>
           )}
         </div>
+      )}
+
+      {/* ── Enlarge Modal ───────────────────────────────────── */}
+      {primaryPhoto && (
+        <Dialog
+          open={isEnlarged}
+          onOpenChange={(open) => {
+            setIsEnlarged(open);
+            if (!open) {
+              setDrawMode(false);
+              setDrawStart(null);
+              setDrawCurrent(null);
+            }
+          }}
+        >
+          <DialogContent className="max-w-[94vw] w-[94vw] max-h-[94vh] p-0 overflow-hidden flex flex-col gap-0">
+            <DialogTitle className="sr-only">Main Focus Photo — Enlarged View</DialogTitle>
+            {/* Header */}
+            <div className="flex items-center gap-2 px-4 py-3 border-b border-border/40 flex-shrink-0">
+              <Star className="w-3.5 h-3.5 text-primary fill-primary" />
+              <span className="text-sm font-bold text-foreground">Main Focus Photo</span>
+              <span className="text-[11px] text-muted-foreground ml-1">
+                — {primaryPhoto.faces.length} face{primaryPhoto.faces.length !== 1 ? 's' : ''} detected
+              </span>
+            </div>
+
+            {/* Body: image left, sidebar right */}
+            <div className="flex flex-1 min-h-0 overflow-hidden">
+
+              {/* Left — image with overlays */}
+              <div className="flex-1 min-w-0 overflow-auto bg-black/5">
+                <div
+                  className={`relative w-full ${drawMode ? 'cursor-crosshair' : ''}`}
+                  onMouseDown={handleModalDrawMouseDown}
+                  onMouseMove={handleModalDrawMouseMove}
+                  onMouseUp={handleModalDrawMouseUp}
+                  onMouseLeave={(e) => {
+                    if (drawMode && drawStart) handleModalDrawMouseUp(e);
+                  }}
+                >
+                  <img
+                    ref={modalImgRef}
+                    src={primaryPhoto.preview}
+                    alt="Primary photo (enlarged)"
+                    className="w-full h-auto block select-none"
+                    draggable={false}
+                  />
+
+                  {primaryPhoto.faces.map((face) => {
+                    const left = clampToUnit(face.box.x);
+                    const top = clampToUnit(face.box.y);
+                    const right = clampToUnit(face.box.x + face.box.width);
+                    const bottom = clampToUnit(face.box.y + face.box.height);
+                    const width = Math.max(0.01, right - left);
+                    const height = Math.max(0.01, bottom - top);
+                    const isIncluded = !!face.childId && !excludedStudentIds.has(face.childId);
+                    const isSelected = selectedFaceId === face.id;
+                    const isManual = face.isManuallyAdded;
+
+                    let borderClass: string;
+                    let labelBgClass: string;
+                    if (isSelected) {
+                      borderClass = 'border-primary bg-primary/20 ring-2 ring-primary/30';
+                      labelBgClass = 'bg-primary';
+                    } else if (isManual && !face.childId) {
+                      borderClass = 'border-amber-500/60 bg-amber-500/10 hover:bg-amber-500/20';
+                      labelBgClass = 'bg-amber-600/70';
+                    } else if (isIncluded) {
+                      borderClass = 'border-green-500/40 bg-green-500/10 hover:bg-green-500/20';
+                      labelBgClass = 'bg-green-600/60';
+                    } else {
+                      borderClass = 'border-red-500/40 bg-red-500/10 hover:bg-red-500/20';
+                      labelBgClass = 'bg-red-600/50';
+                    }
+
+                    const label = face.childName
+                      ? face.childName
+                      : isManual
+                        ? 'Drawn box'
+                        : 'Needs review';
+
+                    return (
+                      <button
+                        key={face.id}
+                        type="button"
+                        disabled={drawMode}
+                        onClick={(e) => {
+                          if (drawMode) return;
+                          e.stopPropagation();
+                          setSelectedFaceId(face.id);
+                        }}
+                        title={label}
+                        className={`absolute border-2 rounded-md transition-all ${borderClass}`}
+                        style={{
+                          left: `${left * 100}%`,
+                          top: `${top * 100}%`,
+                          width: `${width * 100}%`,
+                          height: `${height * 100}%`,
+                        }}
+                      >
+                        <span
+                          className={`absolute left-1 top-1 text-[10px] leading-none px-1.5 py-0.5 rounded text-white font-bold backdrop-blur-sm ${labelBgClass}`}
+                        >
+                          {label}
+                        </span>
+                      </button>
+                    );
+                  })}
+
+                  {drawPreview && (
+                    <div
+                      className="absolute border-2 border-dashed border-primary bg-primary/10 pointer-events-none rounded-md"
+                      style={{
+                        left: `${drawPreview.left * 100}%`,
+                        top: `${drawPreview.top * 100}%`,
+                        width: `${drawPreview.width * 100}%`,
+                        height: `${drawPreview.height * 100}%`,
+                      }}
+                    />
+                  )}
+
+                  {primaryPhoto.faces.length === 0 && !drawMode && (
+                    <div className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground font-semibold bg-black/10">
+                      <ScanFace className="w-5 h-5 mr-2 text-primary" />
+                      No faces detected in this photo
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Right — sidebar controls */}
+              <div className="w-[320px] flex-shrink-0 border-l border-border/40 overflow-y-auto flex flex-col gap-4 p-4">
+
+                {/* Legend */}
+                <div className="flex flex-wrap gap-2 text-[10px] text-muted-foreground">
+                  <span className="inline-flex items-center gap-1">
+                    <span className="w-2.5 h-2.5 rounded-sm bg-green-500/80" /> assigned
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    <span className="w-2.5 h-2.5 rounded-sm bg-red-500/80" /> needs review
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    <span className="w-2.5 h-2.5 rounded-sm bg-amber-500/80" /> drawn box
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    <span className="w-2.5 h-2.5 rounded-sm bg-primary/80" /> selected
+                  </span>
+                </div>
+
+                {/* Selected face panel */}
+                {selectedFace ? (
+                  <div className="rounded-xl border border-primary/30 bg-primary/5 p-3 space-y-3">
+                    <div className="flex items-center gap-2">
+                      {selectedFace.thumbnail && (
+                        <img
+                          src={selectedFace.thumbnail}
+                          alt="Selected face"
+                          className="w-10 h-10 rounded-md object-cover border border-border/40"
+                        />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-semibold text-foreground truncate">
+                          {selectedFace.childName
+                            ? `Assigned: ${selectedFace.childName}`
+                            : selectedFace.isManuallyAdded
+                              ? 'Drawn box (no assignment yet)'
+                              : 'Needs review'}
+                        </p>
+                        <p className="text-[10px] text-muted-foreground">
+                          {selectedFace.childName
+                            ? `${Math.round(selectedFace.similarity * 100)}% similarity · ${selectedFace.classGroup || '—'}`
+                            : 'Pick a candidate or use the dropdown below.'}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {selectedFace.childId && (
+                        <button
+                          type="button"
+                          onClick={() => handleAssignFace(selectedFace.id, null)}
+                          className="h-7 px-2 text-[10px] font-semibold rounded-md border border-border/60 hover:bg-secondary"
+                        >
+                          Clear assignment
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveFace(selectedFace.id)}
+                        className="h-7 px-2 text-[10px] font-semibold rounded-md border border-red-200 text-red-600 hover:bg-red-50 flex items-center gap-1"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        Remove box
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedFaceId(null)}
+                        className="h-7 px-2 text-[10px] text-muted-foreground hover:text-foreground ml-auto"
+                      >
+                        Deselect
+                      </button>
+                    </div>
+
+                    {selectedFace.candidates.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {selectedFace.candidates.map((candidate) => {
+                          const isCurrent = candidate.child_id === selectedFace.childId;
+                          const child = allChildren.find((c) => c.id === candidate.child_id);
+                          const classGroup = child?.class_group || '';
+                          return (
+                            <button
+                              key={candidate.child_id}
+                              type="button"
+                              onClick={() => handleAssignFace(selectedFace.id, candidate)}
+                              className={`flex items-center gap-1.5 pl-1.5 pr-2 py-1 rounded-full text-[11px] font-medium border transition-all ${
+                                isCurrent
+                                  ? 'bg-primary text-primary-foreground border-primary shadow-sm'
+                                  : 'bg-white text-foreground border-border hover:border-primary/60 hover:bg-primary/5'
+                              }`}
+                            >
+                              <span>{candidate.name}</span>
+                              <span className={`text-[10px] ${isCurrent ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>
+                                {Math.round(candidate.similarity * 100)}%
+                              </span>
+                              {classGroup && (
+                                <span className={`text-[10px] ${isCurrent ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>
+                                  · {classGroup}
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {selectedFace.candidates.length === 0 && (
+                      <p className="text-[11px] text-muted-foreground italic">
+                        No close matches found. Pick any student below.
+                      </p>
+                    )}
+
+                    <Select
+                      value={selectedFace.childId ?? ''}
+                      onValueChange={(childId) => {
+                        if (!childId) return;
+                        const child = allChildren.find((c) => c.id === childId);
+                        if (!child) return;
+                        const match = selectedFace.candidates.find((c) => c.child_id === childId);
+                        const candidate: FaceCandidate = {
+                          child_id: child.id,
+                          name: child.name,
+                          similarity: match ? match.similarity : 1,
+                        };
+                        handleAssignFace(selectedFace.id, candidate);
+                      }}
+                    >
+                      <SelectTrigger className="h-8 text-xs bg-white">
+                        <SelectValue placeholder="Assign any enrolled student..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {allChildren.map((child) => {
+                          const match = selectedFace.candidates.find((c) => c.child_id === child.id);
+                          const scoreText = match ? ` — ${Math.round(match.similarity * 100)}%` : '';
+                          const classText = child.class_group ? ` — ${child.class_group}` : '';
+                          return (
+                            <SelectItem key={child.id} value={child.id} className="text-xs">
+                              {child.name}{scoreText}{classText}
+                            </SelectItem>
+                          );
+                        })}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-border/40 bg-secondary/20 p-3 text-center">
+                    <p className="text-[11px] text-muted-foreground">
+                      Click a face box on the photo to select it and assign a student.
+                    </p>
+                  </div>
+                )}
+
+                {/* Draw controls */}
+                <div className="space-y-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDrawMode((prev) => !prev);
+                      setSelectedFaceId(null);
+                      setDrawStart(null);
+                      setDrawCurrent(null);
+                    }}
+                    className={`w-full flex items-center justify-center gap-1.5 text-xs font-medium py-2 px-3 rounded-lg border transition-colors ${
+                      drawMode
+                        ? 'bg-primary/10 text-primary border-primary/30'
+                        : 'border-border/60 text-primary hover:bg-primary/5'
+                    }`}
+                  >
+                    <SquareDashed className="w-3.5 h-3.5" />
+                    {drawMode ? 'Cancel drawing — click to stop' : 'Add box (draw around missed person)'}
+                  </button>
+
+                  {drawMode && (
+                    <p className="text-[10px] text-primary text-center font-medium">
+                      Drag on the photo to draw a new bounding box.
+                    </p>
+                  )}
+
+                  {showAddManual ? (
+                    <div className="flex items-center gap-2">
+                      <Select onValueChange={handleManualAdd}>
+                        <SelectTrigger className="h-8 text-xs flex-1">
+                          <SelectValue placeholder="Select a student..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {availableChildrenForManual.map(c => (
+                            <SelectItem key={c.id} value={c.id} className="text-xs">
+                              {c.name} — {c.class_group}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <button
+                        onClick={() => setShowAddManual(false)}
+                        className="text-xs text-muted-foreground hover:text-foreground px-2 py-1"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setShowAddManual(true)}
+                      className="w-full flex items-center justify-center gap-1.5 text-xs text-primary hover:underline font-medium py-2 px-3 rounded-lg border border-border/60 hover:bg-primary/5"
+                    >
+                      <UserPlus className="w-3.5 h-3.5" />
+                      Add student manually (no face box)
+                    </button>
+                  )}
+                </div>
+
+                {/* Save */}
+                <div className="mt-auto pt-2 border-t border-border/40">
+                  <button
+                    type="button"
+                    onClick={handleSaveAll}
+                    disabled={pendingSaveFaces.length === 0 || savingAll}
+                    className="w-full h-9 rounded-md text-xs font-semibold bg-primary text-primary-foreground flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-primary/90 transition-colors"
+                  >
+                    {savingAll ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving...
+                      </>
+                    ) : (
+                      <>
+                        <Save className="w-3.5 h-3.5" />
+                        {pendingSaveFaces.length > 0
+                          ? `Save ${pendingSaveFaces.length} assignment${pendingSaveFaces.length === 1 ? '' : 's'}`
+                          : 'No pending assignments'}
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
       )}
     </div>
   );

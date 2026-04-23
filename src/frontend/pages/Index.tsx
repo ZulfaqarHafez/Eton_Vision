@@ -542,16 +542,18 @@ const Index = () => {
       <Header onSettingsOpen={() => setIsSettingsOpen(true)} />
       <SettingsPanel isOpen={isSettingsOpen} onClose={handleSettingsClose} />
 
-      <main className="relative z-10 h-[calc(100vh-4rem)] pt-16 pb-16 md:pb-0">
+      <main className="relative z-10 min-h-[calc(100vh-4rem)] pt-16 pb-16 md:pb-6">
         {/* Reports View */}
         {activeTab === "reports" && (
-          <div className="h-full flex flex-col md:flex-row">
-            {/* Left Panel — Upload + Inputs */}
+          <div className="max-w-7xl mx-auto p-5 md:p-6 flex flex-col gap-6">
+            {/* Top Section — Upload + Inputs in 2 columns */}
+            <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] gap-6">
+            {/* Left Column — Upload / Bounding Boxes */}
             <motion.div
-              initial={{ opacity: 0, x: -12 }}
-              animate={{ opacity: 1, x: 0 }}
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.4 }}
-              className="w-full md:w-[420px] lg:w-[460px] md:min-w-[360px] h-auto md:h-full p-5 md:p-6 flex flex-col gap-5 md:border-r border-border/50 overflow-y-auto bg-card/45"
+              className="rounded-2xl border border-border/50 bg-card/45 p-5 md:p-6 flex flex-col gap-5"
             >
               {/* ── Upload or PhotoReview ──────────────────── */}
               {isBatchMode ? (
@@ -613,7 +615,15 @@ const Index = () => {
                   )}
                 </>
               )}
+            </motion.div>
 
+            {/* Right Column — Context + Language + Generate */}
+            <motion.div
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.05 }}
+              className="rounded-2xl border border-border/50 bg-card/45 p-5 md:p-6 flex flex-col gap-5"
+            >
               {/* Activity Context */}
               <div className="space-y-1.5">
                 <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
@@ -625,7 +635,7 @@ const Index = () => {
                   onChange={(e) => setContext(e.target.value)}
                   placeholder="Describe what's happening... e.g. Children have been working with clay to create sea turtles over the past week."
                   disabled={isLoading || isRefining}
-                  rows={4}
+                  rows={7}
                   className="chat-input w-full resize-none text-sm"
                 />
                 <div className="flex items-center justify-between text-[11px] text-muted-foreground px-1">
@@ -721,7 +731,7 @@ const Index = () => {
               )}
 
               {/* Action buttons */}
-              <div className="sticky bottom-0 mt-auto pt-2 -mx-2 px-2 pb-1 bg-gradient-to-t from-background/95 via-background/85 to-transparent backdrop-blur-sm">
+              <div className="mt-auto pt-1">
                 <div className="rounded-2xl border border-border/70 bg-card/88 p-3.5 space-y-2">
                   {hasGenerationInputChanged && (
                     <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-2.5 py-2">
@@ -798,13 +808,14 @@ const Index = () => {
                 </div>
               </div>
             </motion.div>
+            </div>
 
-            {/* Right Panel — Always Report */}
+            {/* Bottom — Observation Report */}
             <motion.div
-              initial={{ opacity: 0, x: 12 }}
-              animate={{ opacity: 1, x: 0 }}
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.4, delay: 0.1 }}
-              className="flex-1 md:h-full p-4 md:p-6 flex flex-col min-h-0"
+              className="flex flex-col min-h-[520px]"
             >
               <ReportPanel
                 reportText={reportText}
@@ -824,7 +835,7 @@ const Index = () => {
 
         {/* Students View */}
         {activeTab === "students" && (
-          <div className="h-full overflow-y-auto">
+          <div>
             <div className="max-w-2xl mx-auto p-4 md:p-6">
               <Suspense fallback={<PanelLoadingFallback label="Loading student workspace..." />}>
                 <LazyStudentList />
