@@ -71,7 +71,7 @@ export async function matchFace(
   // 2. Build the parameter object dynamically
   const rpcParams: any = {
     query_embedding: embedding,
-    match_threshold: 0.95, // 👈 3. Try bumping this slightly higher to 0.95 for strictness!
+    match_threshold: 0.88, // 👈 3. Try bumping this slightly higher to 0.95 for strictness!
   };
 
   // 4. If a class group is provided, send it to the database
