@@ -5,12 +5,14 @@ import * as faceapi from 'face-api.js';
 // node_modules copy. Vite dedupes this so we get the same engine singleton
 // face-api uses internally — setting the backend here DOES affect face-api.
 import * as tf from '@tensorflow/tfjs-core';
+import { FilesetResolver, ImageEmbedder } from '@mediapipe/tasks-vision';
 import * as ort from 'onnxruntime-web';
 
 type FaceInput = HTMLImageElement | HTMLCanvasElement | HTMLVideoElement;
 
 export interface YoloDetection {
   descriptor: Float32Array;
+  mediaPipeDescriptor: Float32Array;
   detection: {
     box: { x: number; y: number; width: number; height: number };
     score: number;
@@ -20,6 +22,7 @@ export interface YoloDetection {
 export function useFaceDetection() {
   const [modelsLoaded, setModelsLoaded] = useState(false);
   const [yoloSession, setYoloSession] = useState<ort.InferenceSession | null>(null);
+  const [mediaPipeEmbedder, setMediaPipeEmbedder] = useState<ImageEmbedder | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -39,13 +42,28 @@ export function useFaceDetection() {
         console.log('[face-api] tfjs backend ready:', tf.getBackend());
 
         ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/';
+        
+        // Load the new MediaPipe WebAssembly files
+        const vision = await FilesetResolver.forVisionTasks(
+          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
+        );
+        const embedder = await ImageEmbedder.createFromOptions(vision, {
+          baseOptions: {
+            modelAssetPath: "https://storage.googleapis.com/mediapipe-models/image_embedder/mobilenet_v3_small/float32/1/mobilenet_v3_small.tflite"
+          },
+          quantize: false
+        });
+
+        // Load your YOLOv8 model AND the old face-api models concurrently!
         const [session] = await Promise.all([
-          ort.InferenceSession.create('/models/yolov8_new.onnx'),
+          ort.InferenceSession.create('/models/yolov8_web_ready.onnx'),
           faceapi.nets.faceLandmark68Net.loadFromUri('/models'),
           faceapi.nets.faceRecognitionNet.loadFromUri('/models'),
         ]);
+
         if (!cancelled) {
           setYoloSession(session);
+          setMediaPipeEmbedder(embedder); // Save the new detective
           setModelsLoaded(true);
         }
       } catch (err) {
@@ -185,21 +203,32 @@ export function useFaceDetection() {
        const ctx = faceCanvas.getContext('2d')!;
        ctx.drawImage(imageElement, bx, by, bw, bh, 0, 0, bw, bh);
 
-       let rawDescriptor = null;
-       try {
-           // 🛠️ The protective net! If face-api panics, the loop safely continues.
-           rawDescriptor = await faceapi.computeFaceDescriptor(faceCanvas);
-       } catch (error) {
-           console.warn("Face-API skipped a tricky face angle!", error);
-       }
+       let oldDescriptor = new Float32Array(128); 
+       let newDescriptor = new Float32Array(1024);
        
-       const descriptor = rawDescriptor 
-            ? ((Array.isArray(rawDescriptor) || rawDescriptor instanceof Array ? rawDescriptor[0] : rawDescriptor) as Float32Array)
-            : new Float32Array(128);
+       try {
+          // 🕵️‍♂️ Detective 1 (The Old Guard - face-api.js)
+          const rawDescriptor = await faceapi.computeFaceDescriptor(faceCanvas);
+          if (rawDescriptor) {
+          const validDescriptor = Array.isArray(rawDescriptor) || rawDescriptor instanceof Array ? rawDescriptor[0] : rawDescriptor;
+               oldDescriptor = new Float32Array(validDescriptor);
+          }
+
+          // 🕵️‍♂️ Detective 2 (The New Recruit - MediaPipe)
+          if (mediaPipeEmbedder) {
+              const embeddingResult = mediaPipeEmbedder.embed(faceCanvas);
+              if (embeddingResult.embeddings.length > 0) {
+              newDescriptor = new Float32Array(embeddingResult.embeddings[0].floatEmbedding);
+              }
+            }
+       } catch (error) {
+          console.warn("One of the detectives struggled with this face!", error);
+       }
 
        finalDetections.push({
            detection: { box, score: box.score },
-           descriptor: descriptor
+           descriptor: oldDescriptor,          // The original 128-number signature
+           mediaPipeDescriptor: newDescriptor  // The brilliant new 1024-number signature!
        });
     }
     return finalDetections;
