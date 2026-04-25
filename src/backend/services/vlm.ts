@@ -41,12 +41,12 @@ const MANDARIN_ENCODER_MODEL_CANDIDATES = [
 ];
 
 const SPARK_DOMAIN_LABELS: { en: string; zh: string }[] = [
-  { en: 'Language & Literacy', zh: '语言与读写能力' },
-  { en: 'Creative Expression', zh: '创意表达' },
-  { en: 'Cultural Awareness', zh: '文化认知' },
-  { en: 'Collaboration & Social Skills', zh: '协作与社交能力' },
-  { en: 'Cognitive Development', zh: '认知发展' },
-  { en: 'Fine Motor & Design Thinking', zh: '精细动作与设计思维' },
+  { en: 'The Social Child', zh: '社会背景下的儿童' },
+  { en: 'The Child as a Communicator', zh: '善交流的儿童' },
+  { en: 'The Thinking Child', zh: '好思考的儿童' },
+  { en: 'The Physical Child', zh: '身体健康的儿童' },
+  { en: 'Creative Expression and Enjoyment through the Arts', zh: '通过艺术创意表达，并享受艺术' },
+  { en: 'The Child as an Agent of Change', zh: '与时俱进的儿童' },
 ];
 
 // ─── Default configs per provider ───────────────────────────────────────────
@@ -354,9 +354,25 @@ export function buildSystemPrompt(
   context: string,
   _historicalSummary?: string,
   language: ReportLanguage = DEFAULT_REPORT_LANGUAGE,
+  grade?: string,
+  selectedGoals?: string[],
+  lessonPlan?: string,
+  studentNotes?: Record<string, string>,
 ): string {
+  const gradeNote = grade ? `This observation is for a child in ${grade}.` : '';
+  const goalsNote = selectedGoals && selectedGoals.length > 0
+    ? `Focus especially on these learning goals if evidence exists in the image:\n${selectedGoals.map((g, i) => `  ${i + 1}. ${g}`).join('\n')}`
+    : '';
+  const lessonPlanNote = lessonPlan?.trim()
+    ? `Activity context from lesson plan:\n${lessonPlan.trim().slice(0, 600)}`
+    : '';
+  const studentNotesNote = studentNotes && Object.keys(studentNotes).length > 0
+    ? `Teacher's additional notes per student:\n${Object.entries(studentNotes).map(([name, note]) => `  ${name}: ${note.slice(0, 300)}`).join('\n')}`
+    : '';
+
   if (language === 'ZH') {
     return `你是一位新加坡幼儿教育老师，正在撰写 "Moments" 观察报告。
+${gradeNote ? `\n${gradeNote}` : ''}${goalsNote ? `\n\n${goalsNote}` : ''}${lessonPlanNote ? `\n\n${lessonPlanNote}` : ''}${studentNotesNote ? `\n\n${studentNotesNote}` : ''}
 
 你将看到一张课堂活动图片。请严格按照以下格式输出：
 
@@ -375,22 +391,22 @@ ${childName}: "..."
 
 学习分析:
 
-语言与读写能力: [写一句说明该活动如何支持${childName}在语言与读写方面的发展，例如叙事组织、词汇表达、表达清晰度或书写相关能力。]
+社会背景下的儿童: [写一句说明${childName}在社交互动、情绪管理、自我建构或选择自主方面的表现。]
 
-创意表达: [写一句说明${childName}在创意构思、审美选择、角色/场景设计或表达方式上的表现。]
+善交流的儿童: [写一句说明该活动如何支持${childName}在语言、读写或沟通方面的发展。]
 
-文化认知: [写一句说明${childName}如何体现对文化元素、在地经验或过去与现在联系的理解。]
+好思考的儿童: [写一句说明${childName}在批判性思考、科学探究或数学思维方面的表现。]
 
-协作与社交能力: [写一句说明${childName}如何与同伴协作、倾听、回应或共同完成任务。]
+身体健康的儿童: [写一句说明${childName}在大肌肉运动、小肌肉控制或健康习惯方面的表现。]
 
-认知发展: [写一句说明${childName}在思考、计划、推理、问题解决或任务结构化方面的表现。]
+通过艺术创意表达，并享受艺术: [写一句说明${childName}在视觉艺术或表演艺术方面的创意表达。]
 
-精细动作与设计思维: [写一句说明${childName}在精细动作、空间组织、构建、剪贴拼装或设计改进方面的表现。]
+与时俱进的儿童: [写一句说明${childName}在承担责任或环境意识方面的表现。]
 
 ---
 
 规则：
-- 学习分析只保留在图片中有明确证据支持的SPARK学习领域
+- 学习分析只保留在图片中有明确证据支持的学习领域
 - 每份报告至少保留2个学习领域
 - 每个学习领域句子都必须点名${childName}并包含可观察行为
 - 不得猜测图片中看不见的事实
@@ -400,6 +416,7 @@ ${childName}: "..."
   }
 
   return `You are an early childhood educator writing a "Moments" observation report.
+${gradeNote ? `\n${gradeNote}` : ''}${goalsNote ? `\n\n${goalsNote}` : ''}${lessonPlanNote ? `\n\n${lessonPlanNote}` : ''}${studentNotesNote ? `\n\n${studentNotesNote}` : ''}
 
 You will be given an image of a classroom activity. Generate a structured report following this EXACT format:
 
@@ -418,17 +435,17 @@ Write as a continuous narrative, multiple paragraphs if needed. Be descriptive a
 
 LEARNING ANALYSIS:
 
-Language & Literacy: [Write a sentence describing how this activity supported ${childName}'s language and literacy development — e.g. sequencing skills, descriptive vocabulary, story planning, writing, or verbal expression.]
+The Social Child: [Write a sentence about ${childName}'s social interactions, emotional regulation, sense of self, or exercise of autonomy.]
 
-Creative Expression: [Write a sentence about ${childName}'s originality, attention to detail in designing characters, settings, props, or artistic choices.]
+The Child as a Communicator: [Write a sentence describing how this activity supported ${childName}'s language, literacy, or communication development.]
 
-Cultural Awareness: [Write a sentence about connections ${childName} made between past and present, appreciation of local heritage, or cultural elements explored.]
+The Thinking Child: [Write a sentence about ${childName}'s critical thinking, scientific inquiry, or mathematical reasoning demonstrated.]
 
-Collaboration & Social Skills: [Write a sentence about how ${childName} worked cooperatively, listened, contributed ideas, or interacted with peers.]
+The Physical Child: [Write a sentence about ${childName}'s gross motor, fine motor, or healthy habits shown in the activity.]
 
-Cognitive Development: [Write a sentence about problem-solving, planning skills, structuring ideas, or critical thinking ${childName} demonstrated.]
+Creative Expression and Enjoyment through the Arts: [Write a sentence about ${childName}'s creative expression through visual or performing arts.]
 
-Fine Motor & Design Thinking: [Write a sentence about precision, spatial awareness, construction skills, cutting, folding, assembling, or design work ${childName} performed.]
+The Child as an Agent of Change: [Write a sentence about ${childName}'s sense of responsibility, environmental awareness, or community action.]
 
 ---
 
@@ -1083,6 +1100,10 @@ async function convertReportToMandarin(
 export interface AnalyzeImageOptions {
   historicalSummary?: string;
   language?: ReportLanguage;
+  grade?: string;
+  selectedGoals?: string[];
+  lessonPlan?: string;
+  studentNotes?: Record<string, string>; // name -> teacher notes
 }
 
 export async function analyzeImage(
@@ -1097,7 +1118,10 @@ export async function analyzeImage(
   const reportLanguage = options?.language || config.reportLanguage || DEFAULT_REPORT_LANGUAGE;
   const imageBase64 = await resolveImageBase64(imageSource);
 
-  const prompt = buildSystemPrompt(childName, context, options?.historicalSummary, reportLanguage);
+  const prompt = buildSystemPrompt(
+    childName, context, options?.historicalSummary, reportLanguage,
+    options?.grade, options?.selectedGoals, options?.lessonPlan, options?.studentNotes,
+  );
   const generatedOutput = await collectStreamOutput((collector) =>
     runObservationByProvider({
       imageSource,
@@ -1116,6 +1140,46 @@ export async function analyzeImage(
   });
 
   return simulateStream(normalizedOutput, onChunk, 12);
+}
+
+export async function mockAnalyzeImage(
+  _imageSource: File | string,
+  childName: string,
+  context: string,
+  onChunk: (chunk: string) => void,
+  _configOverride?: Partial<VLMConfig>,
+  options?: AnalyzeImageOptions,
+): Promise<void> {
+  const gradeTag = options?.grade ? `[Grade: ${options.grade}]` : '[Grade: not set]';
+  const goalsTag = options?.selectedGoals && options.selectedGoals.length > 0
+    ? `[Goals: ${options.selectedGoals.join('; ')}]`
+    : '[Goals: none selected]';
+  const lessonTag = options?.lessonPlan?.trim()
+    ? `[Lesson Plan: ${options.lessonPlan.trim().slice(0, 80)}...]`
+    : '[Lesson Plan: not provided]';
+  const notesTag = options?.studentNotes && Object.keys(options.studentNotes).length > 0
+    ? `[Student Notes: ${Object.entries(options.studentNotes).map(([n, t]) => `${n}: ${t.slice(0, 40)}`).join(' | ')}]`
+    : '[Student Notes: none]';
+
+  const mockReport = `---
+
+CONTEXT:
+${context || '[no context provided]'}
+
+OBSERVATION:
+${childName} was observed engaging thoughtfully in the classroom activity. ${gradeTag} ${goalsTag} ${lessonTag} ${notesTag} This is a mock report generated in Test Mode — no VLM API call was made. The variables above confirm that all inputs were captured correctly before reaching the model.
+
+The Social Child: ${childName} demonstrated collaborative engagement with peers during the activity, showing emerging social skills and positive interactions.
+
+The Child as a Communicator: ${childName} used descriptive language to communicate ideas, supporting vocabulary development and verbal expression throughout the session.
+
+The Thinking Child: ${childName} approached the task with curiosity, asking questions and exploring different strategies to reach a solution.
+
+Creative Expression and Enjoyment through the Arts: ${childName} showed creative flair in the way they approached the materials, making deliberate aesthetic choices in their work.
+
+---`;
+
+  return simulateStream(mockReport, onChunk, 8);
 }
 
 export async function refineReport(

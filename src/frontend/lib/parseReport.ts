@@ -20,37 +20,40 @@ const SPARK_DOMAINS: Array<{
   colors: { bg: string; border: string; dot: string };
 }> = [
   {
-    en: 'Language & Literacy',
-    zh: '语言与读写能力',
-    aliases: ['Language and Literacy'],
-    colors: { bg: '#EEF6FF', border: '#7EB8E8', dot: '#4A90D9' },
-  },
-  {
-    en: 'Creative Expression',
-    zh: '创意表达',
-    colors: { bg: '#FDF0FF', border: '#C47EE8', dot: '#A044D4' },
-  },
-  {
-    en: 'Cultural Awareness',
-    zh: '文化认知',
-    colors: { bg: '#FFF3EC', border: '#F4A46A', dot: '#E8845A' },
-  },
-  {
-    en: 'Collaboration & Social Skills',
-    zh: '协作与社交能力',
-    aliases: ['Collaboration and Social Skills'],
+    en: 'The Social Child',
+    zh: '社会背景下的儿童',
+    aliases: ['Social Child', 'Collaboration & Social Skills', 'Collaboration and Social Skills'],
     colors: { bg: '#F0FFF4', border: '#68C98A', dot: '#38A05C' },
   },
   {
-    en: 'Cognitive Development',
-    zh: '认知发展',
+    en: 'The Child as a Communicator',
+    zh: '善交流的儿童',
+    aliases: ['Child as a Communicator', 'Communicator', 'Language & Literacy', 'Language and Literacy'],
+    colors: { bg: '#EEF6FF', border: '#7EB8E8', dot: '#4A90D9' },
+  },
+  {
+    en: 'The Thinking Child',
+    zh: '好思考的儿童',
+    aliases: ['Thinking Child', 'Cognitive Development'],
     colors: { bg: '#FFF8EC', border: '#E8C86A', dot: '#D4A017' },
   },
   {
-    en: 'Fine Motor & Design Thinking',
-    zh: '精细动作与设计思维',
-    aliases: ['Fine Motor and Design Thinking'],
+    en: 'The Physical Child',
+    zh: '身体健康的儿童',
+    aliases: ['Physical Child', 'Fine Motor & Design Thinking', 'Fine Motor and Design Thinking'],
     colors: { bg: '#FFE8EE', border: '#E87E9E', dot: '#D44A6A' },
+  },
+  {
+    en: 'Creative Expression and Enjoyment through the Arts',
+    zh: '通过艺术创意表达，并享受艺术',
+    aliases: ['Creative Expression', 'Arts', 'Creative Expression and Enjoyment'],
+    colors: { bg: '#FDF0FF', border: '#C47EE8', dot: '#A044D4' },
+  },
+  {
+    en: 'The Child as an Agent of Change',
+    zh: '与时俱进的儿童',
+    aliases: ['Agent of Change', 'Child as an Agent of Change', 'Cultural Awareness'],
+    colors: { bg: '#FFF3EC', border: '#F4A46A', dot: '#E8845A' },
   },
 ];
 

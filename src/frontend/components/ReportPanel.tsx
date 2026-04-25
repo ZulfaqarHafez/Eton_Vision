@@ -17,6 +17,8 @@ interface ReportPanelProps {
   imagePreview?: string | null;
   imageFile?: File | null;
   onReportEdit?: (updated: ParsedReport) => void;
+  isTestMode?: boolean;
+  grade?: string;
 }
 
 /* Illustration: a friendly open book with a star */
@@ -65,6 +67,8 @@ export function ReportPanel({
   imagePreview,
   imageFile,
   onReportEdit,
+  isTestMode,
+  grade,
 }: ReportPanelProps) {
   const hasReportText = reportText.length > 0;
   const parsedReport = useMemo(() => (reportText ? parseReport(reportText) : null), [reportText]);
@@ -84,6 +88,16 @@ export function ReportPanel({
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {grade && (
+            <span className="text-[10px] font-bold px-2.5 py-1 rounded-full border border-primary/30 bg-primary/10 text-primary/80">
+              {grade}
+            </span>
+          )}
+          {isTestMode && (
+            <span className="text-[10px] font-bold px-2.5 py-1 rounded-full border border-amber-300 bg-amber-50 text-amber-700">
+              Test
+            </span>
+          )}
           {parsedReport && (
             <span className="text-[10px] font-bold px-2.5 py-1 rounded-full border border-border/70 bg-background/85 text-muted-foreground">
               {parsedReport.language === 'ZH' ? 'Mandarin' : 'English'}
@@ -164,6 +178,7 @@ export function ReportPanel({
             imagePreview={imagePreview}
             imageFile={imageFile}
             onReportEdit={onReportEdit}
+            isTestMode={isTestMode}
           />
         )}
       </div>

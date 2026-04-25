@@ -18,6 +18,7 @@ interface ObservationReportProps {
   imagePreview?: string | null;
   imageFile?: File | null;
   onReportEdit?: (updated: ParsedReport) => void;
+  isTestMode?: boolean;
 }
 
 const StreamingCursor = () => (
@@ -26,18 +27,20 @@ const StreamingCursor = () => (
 
 // Category badge colors — pastel, kid-friendly
 const BADGE_STYLES: Record<string, string> = {
-  'Language & Literacy':           'bg-[#EEF6FF] text-[#3B7DD8] border-[#BFD9F5]',
-  'Creative Expression':           'bg-[#FDF0FF] text-[#9A3DC8] border-[#E4BFF5]',
-  'Cultural Awareness':            'bg-[#FFF3EC] text-[#D06830] border-[#F5D0B5]',
-  'Collaboration & Social Skills': 'bg-[#F0FFF4] text-[#2E8B4E] border-[#B5E8C8]',
-  'Cognitive Development':         'bg-[#FFF8EC] text-[#B8860B] border-[#F0DCA0]',
-  'Fine Motor & Design Thinking':  'bg-[#FFE8EE] text-[#C94060] border-[#F0B5C5]',
-  '语言与读写能力':                  'bg-[#EEF6FF] text-[#3B7DD8] border-[#BFD9F5]',
-  '创意表达':                        'bg-[#FDF0FF] text-[#9A3DC8] border-[#E4BFF5]',
-  '文化认知':                        'bg-[#FFF3EC] text-[#D06830] border-[#F5D0B5]',
-  '协作与社交能力':                  'bg-[#F0FFF4] text-[#2E8B4E] border-[#B5E8C8]',
-  '认知发展':                        'bg-[#FFF8EC] text-[#B8860B] border-[#F0DCA0]',
-  '精细动作与设计思维':              'bg-[#FFE8EE] text-[#C94060] border-[#F0B5C5]',
+  // Eton categories (EN)
+  'The Social Child':                                       'bg-[#F0FFF4] text-[#2E8B4E] border-[#B5E8C8]',
+  'The Child as a Communicator':                            'bg-[#EEF6FF] text-[#3B7DD8] border-[#BFD9F5]',
+  'The Thinking Child':                                     'bg-[#FFF8EC] text-[#B8860B] border-[#F0DCA0]',
+  'The Physical Child':                                     'bg-[#FFE8EE] text-[#C94060] border-[#F0B5C5]',
+  'Creative Expression and Enjoyment through the Arts':     'bg-[#FDF0FF] text-[#9A3DC8] border-[#E4BFF5]',
+  'The Child as an Agent of Change':                        'bg-[#FFF3EC] text-[#D06830] border-[#F5D0B5]',
+  // Eton categories (ZH)
+  '社会背景下的儿童':                                        'bg-[#F0FFF4] text-[#2E8B4E] border-[#B5E8C8]',
+  '善交流的儿童':                                            'bg-[#EEF6FF] text-[#3B7DD8] border-[#BFD9F5]',
+  '好思考的儿童':                                            'bg-[#FFF8EC] text-[#B8860B] border-[#F0DCA0]',
+  '身体健康的儿童':                                          'bg-[#FFE8EE] text-[#C94060] border-[#F0B5C5]',
+  '通过艺术创意表达，并享受艺术':                            'bg-[#FDF0FF] text-[#9A3DC8] border-[#E4BFF5]',
+  '与时俱进的儿童':                                          'bg-[#FFF3EC] text-[#D06830] border-[#F5D0B5]',
 };
 
 function rebuildRaw(
@@ -76,7 +79,7 @@ function EditButtons({ editing, onSave, onEdit, onCancel }: { editing: boolean; 
   );
 }
 
-export function ObservationReport({ report, isStreaming, childName, taggedChildren, imagePreview, imageFile, onReportEdit }: ObservationReportProps) {
+export function ObservationReport({ report, isStreaming, childName, taggedChildren, imagePreview, imageFile, onReportEdit, isTestMode }: ObservationReportProps) {
   const [copied, setCopied] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [published, setPublished] = useState(false);
@@ -422,17 +425,22 @@ export function ObservationReport({ report, isStreaming, childName, taggedChildr
             </button>
             <button
               onClick={handlePublish}
-              disabled={publishing || published}
+              disabled={publishing || published || isTestMode}
+              title={isTestMode ? 'Disabled in test mode' : undefined}
               className={`flex items-center gap-1.5 px-4 py-2 text-xs font-bold rounded-xl transition-all shadow-sm ${
                 published
                   ? 'bg-accent/10 text-accent border border-accent/20'
-                  : 'btn-primary'
+                  : isTestMode
+                    ? 'bg-muted/60 text-muted-foreground border border-border/50'
+                    : 'btn-primary'
               } disabled:opacity-60`}
             >
               {publishing ? (
                 <><Loader2 className="w-3 h-3 animate-spin" /> Publishing...</>
               ) : published ? (
                 <><Check className="w-3 h-3" /> Published</>
+              ) : isTestMode ? (
+                <><Send className="w-3 h-3" /> Publish (test)</>
               ) : (
                 <><Send className="w-3 h-3" /> Publish</>
               )}

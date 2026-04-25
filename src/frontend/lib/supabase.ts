@@ -54,6 +54,8 @@ export interface TaggedChild {
 //   observation text NOT NULL DEFAULT '',
 //   learning_analysis jsonb NOT NULL DEFAULT '[]',
 //   report_raw text NOT NULL DEFAULT '',
+//   grade text,
+//   learning_goals jsonb NOT NULL DEFAULT '[]',
 //   created_at timestamptz DEFAULT now()
 // );
 export interface PublishedReport {
@@ -66,6 +68,8 @@ export interface PublishedReport {
   observation: string;
   learning_analysis: { category: string; description: string }[];
   report_raw: string;
+  grade?: string | null;
+  learning_goals?: string[];
   created_at: string;
 }
 
