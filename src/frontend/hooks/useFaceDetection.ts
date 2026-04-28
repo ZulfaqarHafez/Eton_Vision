@@ -28,11 +28,27 @@ export function useFaceDetection() {
     let cancelled = false;
     async function loadModels() {
       try {
-        // Set the TFJS backend BEFORE loading face-api nets so the weight
-        // tensors register against an active engine. Without this,
-        // computeFaceDescriptor crashes with "Cannot read properties of
-        // undefined (reading 'backend')". The trivial scalar op forces the
-        // engine to fully materialise before nets arrive.
+        ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/';
+
+        // MediaPipe WASM must init its WebGL context BEFORE TFJS claims one.
+        // Reversing this order causes _emscripten_glClear to crash with
+        // "Cannot read properties of undefined (reading 'clear')".
+        let embedder: ImageEmbedder | null = null;
+        try {
+          const vision = await FilesetResolver.forVisionTasks(
+            "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34/wasm"
+          );
+          embedder = await ImageEmbedder.createFromOptions(vision, {
+            baseOptions: {
+              modelAssetPath: "https://storage.googleapis.com/mediapipe-models/image_embedder/mobilenet_v3_small/float32/1/mobilenet_v3_small.tflite"
+            },
+            quantize: false
+          });
+        } catch (mpErr) {
+          console.warn('[MediaPipe] Embedder unavailable, falling back to face-api only:', mpErr);
+        }
+
+        // Set TFJS backend AFTER MediaPipe has its WebGL context.
         try {
           await tf.setBackend('webgl');
         } catch {
@@ -41,20 +57,6 @@ export function useFaceDetection() {
         tf.scalar(0).dispose();
         console.log('[face-api] tfjs backend ready:', tf.getBackend());
 
-        ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/';
-        
-        // Load the new MediaPipe WebAssembly files
-        const vision = await FilesetResolver.forVisionTasks(
-          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
-        );
-        const embedder = await ImageEmbedder.createFromOptions(vision, {
-          baseOptions: {
-            modelAssetPath: "https://storage.googleapis.com/mediapipe-models/image_embedder/mobilenet_v3_small/float32/1/mobilenet_v3_small.tflite"
-          },
-          quantize: false
-        });
-
-        // Load your YOLOv8 model AND the old face-api models concurrently!
         const [session] = await Promise.all([
           ort.InferenceSession.create('/models/yolov8_web_ready.onnx'),
           faceapi.nets.faceLandmark68Net.loadFromUri('/models'),
@@ -63,7 +65,7 @@ export function useFaceDetection() {
 
         if (!cancelled) {
           setYoloSession(session);
-          setMediaPipeEmbedder(embedder); // Save the new detective
+          setMediaPipeEmbedder(embedder);
           setModelsLoaded(true);
         }
       } catch (err) {
