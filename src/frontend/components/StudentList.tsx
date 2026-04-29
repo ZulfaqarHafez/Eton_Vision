@@ -95,15 +95,32 @@ export function StudentList() {
   };
 
   const handleDeleteChild = async (child: Child) => {
-    // Delete signatures first, then child
-    await supabase.from('face_signatures').delete().eq('child_id', child.id);
-    const { error } = await supabase.from('children').delete().eq('id', child.id);
-    if (error) {
-      toast.error('Failed to remove student');
-      return;
+    try {
+      // 1. Delete all signatures first
+      const { error: sigError } = await supabase
+        .from('face_signatures')
+        .delete()
+        .eq('child_id', child.id);
+      
+      if (sigError) throw sigError;
+
+      // 2. Now delete the student
+      const { error: childError } = await supabase
+        .from('children')
+        .delete()
+        .eq('id', child.id);
+
+      if (childError) throw childError;
+
+      toast.success(`${child.name} removed permanently`);
+      
+      // 3. CRITICAL CHANGE: Manually update the local list so they don't "reappear"
+      setChildren(prev => prev.filter(c => c.id !== child.id)); 
+      
+    } catch (err) {
+      console.error('Delete failed:', err);
+      toast.error('Could not delete student.');
     }
-    toast.success(`${child.name} removed`);
-    fetchStudents();
   };
 
   const getInitials = (name: string) =>
