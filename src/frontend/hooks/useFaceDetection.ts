@@ -8,10 +8,17 @@ type FaceInput = HTMLImageElement | HTMLCanvasElement | HTMLVideoElement;
 export interface YoloDetection {
   descriptor: Float32Array;
   mediaPipeDescriptor: Float32Array;
+  landmarks?: faceapi.FaceLandmarks68;
   detection: {
     box: { x: number; y: number; width: number; height: number };
     score: number;
   };
+}
+
+if (!(window as any).__AI_MODELS_LOADING) {
+  (window as any).__AI_MODELS_LOADING = null;
+  (window as any).__SHARED_YOLO = null;
+  (window as any).__SHARED_MEDIAPIPE = null;
 }
 
 export function useFaceDetection() {
@@ -21,38 +28,52 @@ export function useFaceDetection() {
 
   useEffect(() => {
     let cancelled = false;
-    async function loadModels() {
-      try {
-        ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/';
-        
-        // Load the new MediaPipe WebAssembly files
-        const vision = await FilesetResolver.forVisionTasks(
-          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
-        );
-        const embedder = await ImageEmbedder.createFromOptions(vision, {
-          baseOptions: {
-            modelAssetPath: "https://storage.googleapis.com/mediapipe-models/image_embedder/mobilenet_v3_small/float32/1/mobilenet_v3_small.tflite"
-          },
-          quantize: false
-        });
 
-        // Load your YOLOv8 model AND the old face-api models concurrently!
-        const [session] = await Promise.all([
-          ort.InferenceSession.create('/models/yolov8_web_ready.onnx'),
-          faceapi.nets.faceLandmark68Net.loadFromUri('/models'),
-          faceapi.nets.faceRecognitionNet.loadFromUri('/models'),
-        ]);
+    const initModels = async () => {
+      if (!(window as any).__AI_MODELS_LOADING) {
+        (window as any).__AI_MODELS_LOADING = (async () => {
+          try {
+            await new Promise(resolve => setTimeout(resolve, 200));
+            
+            const vision = await FilesetResolver.forVisionTasks(
+              "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm"
+            );
+            
+            (window as any).__SHARED_MEDIAPIPE = await ImageEmbedder.createFromOptions(vision, {
+              baseOptions: {
+                modelAssetPath: "https://storage.googleapis.com/mediapipe-models/image_embedder/mobilenet_v3_small/float32/1/mobilenet_v3_small.tflite",
+                delegate: "CPU" 
+              },
+              quantize: false
+            });
 
-        if (!cancelled) {
-          setYoloSession(session);
-          setMediaPipeEmbedder(embedder); // Save the new detective
-          setModelsLoaded(true);
-        }
-      } catch (err) {
-        console.error('Face detection model loading failed:', err);
+            await new Promise(resolve => setTimeout(resolve, 100));
+
+            ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/';
+            (window as any).__SHARED_YOLO = await ort.InferenceSession.create('/models/yolov8_web_ready.onnx', {
+              executionProviders: ['wasm'] 
+            });
+
+            await faceapi.nets.faceLandmark68Net.loadFromUri('/models');
+            await faceapi.nets.faceRecognitionNet.loadFromUri('/models');
+
+          } catch (err) {
+            console.error('Face detection model loading failed:', err);
+            (window as any).__AI_MODELS_LOADING = null;
+          }
+        })();
       }
-    }
-    loadModels();
+
+      await (window as any).__AI_MODELS_LOADING;
+
+      if (!cancelled && (window as any).__SHARED_YOLO && (window as any).__SHARED_MEDIAPIPE) {
+        setYoloSession((window as any).__SHARED_YOLO);
+        setMediaPipeEmbedder((window as any).__SHARED_MEDIAPIPE);
+        setModelsLoaded(true);
+      }
+    };
+
+    initModels();
     return () => { cancelled = true; };
   }, []);
 
@@ -92,10 +113,7 @@ export function useFaceDetection() {
     const box1Area = box1.width * box1.height;
     const box2Area = box2.width * box2.height;
 
-    // Standard overlap
     const iou = interArea / (box1Area + box2Area - interArea);
-    
-    // 🛠️ NEW: How much of the smaller box is inside the bigger one?
     const minArea = Math.min(box1Area, box2Area);
     const insideRatio = interArea / minArea; 
 
@@ -117,23 +135,16 @@ export function useFaceDetection() {
     const padY = (640 - (origH * scale)) / 2;
 
     const rawBoxes = [];
-
     for (let i = 0; i < 8400; i++) {
       const confidence = output[4 * 8400 + i];
-      
-      // 🛠️ Bumped the confidence slightly to filter out the noise!
       if (confidence > 0.32) { 
         const xc = output[0 * 8400 + i];
         const yc = output[1 * 8400 + i];
         const w = output[2 * 8400 + i];
         const h = output[3 * 8400 + i];
 
-        // 🛠️ THE TIGHTENED GEOMETRY FILTER
-        // A human head is roughly square. We instantly reject boxes that are too skinny or too wide!
         const aspectRatio = w / h;
-        if (aspectRatio < 0.5 || aspectRatio > 1.4) {
-            continue; // Skip this box, it is definitely a hand or an arm!
-        }
+        if (aspectRatio < 0.5 || aspectRatio > 1.4) continue; 
 
         const unpaddedXc = (xc - padX) / scale;
         const unpaddedYc = (yc - padY) / scale;
@@ -150,23 +161,13 @@ export function useFaceDetection() {
       }
     }
 
-    // 🛠️ THE RUSSIAN DOLL FIX: Sort by area (smallest first) instead of confidence score!
-    // This ensures the crisp, small face boxes are always prioritised over the massive body boxes.
     rawBoxes.sort((a, b) => (a.width * a.height) - (b.width * b.height));
-
     const finalBoxes = [];
     for (const box of rawBoxes) {
       let keep = true;
       for (const selectedBox of finalBoxes) {
-        
-        // 🚨 Notice we are calling the new 'calculateOverlap' here!
         const { iou, insideRatio } = calculateOverlap(box, selectedBox);
-        
-        // If they overlap normally, OR if this box completely swallows a smaller face box, discard it!
-        if (iou > 0.45 || insideRatio > 0.8) { 
-          keep = false; 
-          break; 
-        }
+        if (iou > 0.45 || insideRatio > 0.8) { keep = false; break; }
       }
       if (keep) finalBoxes.push(box);
     }
@@ -174,7 +175,6 @@ export function useFaceDetection() {
     const finalDetections: YoloDetection[] = [];
     for (const box of finalBoxes) {
        const faceCanvas = document.createElement('canvas');
-       
        const bx = Math.max(0, Math.min(box.x, origW - 1));
        const by = Math.max(0, Math.min(box.y, origH - 1));
        const bw = Math.max(1, Math.min(box.width, origW - bx));
@@ -187,34 +187,47 @@ export function useFaceDetection() {
 
        let oldDescriptor = new Float32Array(128); 
        let newDescriptor = new Float32Array(1024);
+       let currentFaceLandmarks: faceapi.FaceLandmarks68 | undefined = undefined;
        
        try {
-          // 🕵️‍♂️ Detective 1 (The Old Guard - face-api.js)
-          const rawDescriptor = await faceapi.computeFaceDescriptor(faceCanvas);
-          if (rawDescriptor) {
-          const validDescriptor = Array.isArray(rawDescriptor) || rawDescriptor instanceof Array ? rawDescriptor[0] : rawDescriptor;
-               oldDescriptor = new Float32Array(validDescriptor);
-          }
-
-          // 🕵️‍♂️ Detective 2 (The New Recruit - MediaPipe)
           if (mediaPipeEmbedder) {
               const embeddingResult = mediaPipeEmbedder.embed(faceCanvas);
-              if (embeddingResult.embeddings.length > 0) {
-              newDescriptor = new Float32Array(embeddingResult.embeddings[0].floatEmbedding);
+              if (embeddingResult.embeddings && embeddingResult.embeddings.length > 0) {
+                 newDescriptor = new Float32Array(embeddingResult.embeddings[0].floatEmbedding);
               }
-            }
+          }
        } catch (error) {
-          console.warn("One of the detectives struggled with this face!", error);
+          console.warn("MediaPipe struggled!", error);
+       }
+
+       try {
+          const resizedCanvas = document.createElement('canvas');
+          resizedCanvas.width = 150;
+          resizedCanvas.height = 150;
+          const rCtx = resizedCanvas.getContext('2d')!;
+          rCtx.drawImage(faceCanvas, 0, 0, 150, 150);
+
+          const rawLandmarks = await faceapi.detectFaceLandmarks(resizedCanvas);
+          currentFaceLandmarks = Array.isArray(rawLandmarks) ? rawLandmarks[0] : rawLandmarks;
+
+          const rawDescriptor = await faceapi.computeFaceDescriptor(resizedCanvas);
+          if (rawDescriptor) {
+             const validDescriptor = Array.isArray(rawDescriptor) || rawDescriptor instanceof Float32Array ? rawDescriptor : (rawDescriptor as any)[0];
+             oldDescriptor = new Float32Array(validDescriptor || new Float32Array(128));
+          }
+       } catch (error) {
+          console.warn("Face-API struggled!", error);
        }
 
        finalDetections.push({
            detection: { box, score: box.score },
-           descriptor: oldDescriptor,          // The original 128-number signature
-           mediaPipeDescriptor: newDescriptor  // The brilliant new 1024-number signature!
+           descriptor: oldDescriptor,          
+           mediaPipeDescriptor: newDescriptor,  
+           landmarks: currentFaceLandmarks
        });
     }
     return finalDetections;
-  }, [yoloSession]);
+  }, [yoloSession, mediaPipeEmbedder]);
 
   const getFullDetection = useCallback(async (imageElement: FaceInput) => {
     const allFaces = await getAllDetections(imageElement);

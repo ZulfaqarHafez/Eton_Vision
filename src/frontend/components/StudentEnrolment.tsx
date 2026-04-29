@@ -1,77 +1,39 @@
-import { useState, useRef } from 'react';
+import React, { useState, useRef } from 'react';
 import * as faceapi from 'face-api.js';
-import { Camera, Loader2, UserPlus, CheckCircle2 } from 'lucide-react';
-import { Button } from '@/frontend/components/ui/button';
-import { Input } from '@/frontend/components/ui/input';
-import { Label } from '@/frontend/components/ui/label';
-import { Checkbox } from '@/frontend/components/ui/checkbox';
-import { supabase } from '@/frontend/lib/supabase';
-import { useFaceDetection } from '@/frontend/hooks/useFaceDetection';
-import { getFaceCanvas } from '@/frontend/lib/faceUtils';
+import { Camera, Loader2, UserPlus, CheckCircle2, CloudUpload } from 'lucide-react';
+import { Button } from './ui/button';
+import { Input } from './ui/input';
+import { Label } from './ui/label';
+import { Checkbox } from './ui/checkbox';
+import { 
+  Select, 
+  SelectContent, 
+  SelectItem, 
+  SelectTrigger, 
+  SelectValue 
+} from './ui/select';
+import { supabase } from '../lib/supabase';
+import { useFaceDetection } from '../hooks/useFaceDetection';
+import { getFaceCanvas } from '../lib/faceUtils';
 import { toast } from 'sonner';
 
-interface StudentEnrolmentProps {
-  onSuccess?: () => void;
-}
-
-interface NormalizedFaceBox {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
-
-function clampToUnit(value: number) {
-  return Math.max(0, Math.min(1, value));
-}
-
-export function StudentEnrolment({ onSuccess }: StudentEnrolmentProps) {
+export function StudentEnrolment({ onSuccess }: { onSuccess?: () => void }) {
   const { modelsLoaded, getFullDetection } = useFaceDetection();
   const [name, setName] = useState('');
   const [classGroup, setClassGroup] = useState('');
   const [consent, setConsent] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
-  const [facePreview, setFacePreview] = useState<string | null>(null);
-  const [detectedFaceBox, setDetectedFaceBox] = useState<NormalizedFaceBox | null>(null);
-  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [photoPreviews, setPhotoPreviews] = useState<string[]>([]);
+  const [photoFiles, setPhotoFiles] = useState<File[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handlePhotoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
 
-    setPhotoFile(file);
-    setPhotoPreview(URL.createObjectURL(file));
-    setFacePreview(null);
-    setDetectedFaceBox(null);
-
-    if (!modelsLoaded) return;
-
-    // Auto-detect face from uploaded photo
-    try {
-      const img = await faceapi.bufferToImage(file);
-      const detection = await getFullDetection(img);
-      if (detection) {
-        const imageWidth = img.naturalWidth || img.width;
-        const imageHeight = img.naturalHeight || img.height;
-        const box = detection.detection.box;
-
-        setDetectedFaceBox({
-          x: clampToUnit(box.x / imageWidth),
-          y: clampToUnit(box.y / imageHeight),
-          width: clampToUnit(box.width / imageWidth),
-          height: clampToUnit(box.height / imageHeight),
-        });
-
-        const thumbnail = getFaceCanvas(img, detection.detection.box);
-        setFacePreview(thumbnail);
-      } else {
-        setDetectedFaceBox(null);
-      }
-    } catch (err) {
-      console.error('Face preview error:', err);
-    }
+    setPhotoFiles(files);
+    const newPreviews = files.map(file => URL.createObjectURL(file as File));
+    setPhotoPreviews(newPreviews);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -84,209 +46,176 @@ export function StudentEnrolment({ onSuccess }: StudentEnrolmentProps) {
       toast.error('Parental consent is required.');
       return;
     }
-    if (!photoFile) {
-      toast.error('Please upload a photo.');
+    if (photoFiles.length === 0) {
+      toast.error('Please upload at least one photo.');
       return;
     }
 
     setIsProcessing(true);
+    let childId: string | null = null;
+
     try {
-      const img = await faceapi.bufferToImage(photoFile);
-      const detection = await getFullDetection(img);
-
-      if (!detection) {
-        setDetectedFaceBox(null);
-        toast.error('No face detected. Please use a clearer photo.');
-        return;
-      }
-
-      const imageWidth = img.naturalWidth || img.width;
-      const imageHeight = img.naturalHeight || img.height;
-      const box = detection.detection.box;
-      setDetectedFaceBox({
-        x: clampToUnit(box.x / imageWidth),
-        y: clampToUnit(box.y / imageHeight),
-        width: clampToUnit(box.width / imageWidth),
-        height: clampToUnit(box.height / imageHeight),
-      });
-
-      const faceThumbnail = getFaceCanvas(img, detection.detection.box);
-      const embedding = Array.from(detection.descriptor);
-
-      // Create child record
+      // 1. Create child record first
       const { data: childData, error: childError } = await supabase
         .from('children')
-        .insert({ name, class_group: classGroup, consent_given: consent })
+        .insert({ 
+          name, 
+          class_group: classGroup, 
+          consent_given: consent 
+        })
         .select()
         .single();
 
       if (childError) throw childError;
+      childId = childData.id;
 
-      // Save face signature
+      const signatureInserts = [];
+
+      // 2. Process each photo
+      for (const file of photoFiles) {
+        const img = await faceapi.bufferToImage(file);
+        const detection = await getFullDetection(img);
+
+        // CHANGE THIS: Skip instead of throwing an error
+        if (!detection) {
+          console.warn(`Skipping image ${file.name} - no face detected`);
+          continue; 
+        }
+
+        const faceThumbnailString = getFaceCanvas(img, detection.detection.box);
+        
+        signatureInserts.push({
+          child_id: childId,
+          embedding: Array.from(detection.descriptor),
+          mediapipe_embedding: Array.from(detection.mediaPipeDescriptor),
+          image_url: faceThumbnailString, 
+          angle_label: 'ENROLMENT_BATCH',
+        });
+      }
+
+// Ensure at least ONE face was found before proceeding
+if (signatureInserts.length === 0) {
+  throw new Error("AI could not find a clear face in ANY of the uploaded photos.");
+}
+
+      // 3. Save all face signatures
       const { error: sigError } = await supabase
         .from('face_signatures')
-        .insert({
-          child_id: childData.id,
-          embedding,
-          image_url: faceThumbnail,
-          angle_label: 'FRONT',
-        });
+        .insert(signatureInserts);
 
       if (sigError) throw sigError;
 
-      toast.success(`${name} enrolled successfully!`);
+      toast.success(`${name} enrolled successfully with ${photoFiles.length} photos!`);
+      
+      // Reset form
       setName('');
       setClassGroup('');
       setConsent(false);
-      setPhotoPreview(null);
-      setFacePreview(null);
-      setDetectedFaceBox(null);
-      setPhotoFile(null);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-      onSuccess?.();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Enrolment failed');
+      setPhotoPreviews([]);
+      setPhotoFiles([]);
+      if (onSuccess) onSuccess();
+      
+    } catch (err: any) {
+      // Cleanup: If signatures failed, remove the student record
+      if (childId) {
+        await supabase.from('children').delete().eq('id', childId);
+      }
+      toast.error(err.message || 'Enrolment failed');
     } finally {
       setIsProcessing(false);
     }
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-5">
-      <div className="space-y-2">
-        <Label htmlFor="student-name">Student Name</Label>
-        <Input
-          id="student-name"
-          placeholder="e.g. Liam Chen"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          required
-          disabled={isProcessing}
-        />
-      </div>
-
-      <div className="space-y-2">
-        <Label htmlFor="class-group">Class Group</Label>
-        <Input
-          id="class-group"
-          placeholder="e.g. K1-A"
-          value={classGroup}
-          onChange={(e) => setClassGroup(e.target.value)}
-          required
-          disabled={isProcessing}
-        />
-      </div>
-
-      <div className="space-y-2">
-        <Label>Student Photo</Label>
-        <div
-          onClick={() => fileInputRef.current?.click()}
-          className="border-2 border-dashed border-border rounded-xl p-4 cursor-pointer hover:border-primary/50 transition-colors flex items-center gap-4"
-        >
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={handlePhotoSelect}
+    <div className="space-y-6 p-1">
+      <form onSubmit={handleSubmit} className="space-y-5">
+        <div className="space-y-2">
+          <Label htmlFor="student-name">Student Name</Label>
+          <Input
+            id="student-name"
+            placeholder="e.g. Liam Chen"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            required
             disabled={isProcessing}
           />
-          {photoPreview ? (
-            <div className="space-y-3 w-full">
-              <div className="relative rounded-lg overflow-hidden border border-border/60 bg-black/5">
-                <img
-                  src={photoPreview}
-                  alt="Upload preview"
-                  className="w-full max-h-[220px] object-contain"
-                />
-                {detectedFaceBox && (
-                  <div
-                    className="absolute border-2 border-green-500 rounded-md bg-green-500/10"
-                    style={{
-                      left: `${clampToUnit(detectedFaceBox.x) * 100}%`,
-                      top: `${clampToUnit(detectedFaceBox.y) * 100}%`,
-                      width: `${clampToUnit(detectedFaceBox.width) * 100}%`,
-                      height: `${clampToUnit(detectedFaceBox.height) * 100}%`,
-                    }}
-                  >
-                    <span className="absolute left-1 top-1 text-[10px] font-bold text-white bg-green-600/90 px-1.5 py-0.5 rounded">
-                      Enrol face
-                    </span>
-                  </div>
-                )}
-              </div>
-
-              {facePreview ? (
-                <div className="flex items-center gap-3">
-                  <img
-                    src={facePreview}
-                    alt="Detected face"
-                    className="w-14 h-14 rounded-full object-cover border-2 border-green-500"
-                  />
-                  <div className="flex flex-col text-sm">
-                    <span className="flex items-center gap-1.5 text-green-600 font-medium">
-                      <CheckCircle2 className="w-4 h-4" />
-                      Face detected
-                    </span>
-                    <span className="text-[11px] text-muted-foreground">
-                      Green box shows the face being added to training data.
-                    </span>
-                  </div>
-                </div>
-              ) : (
-                <span className="text-sm text-muted-foreground">
-                  {modelsLoaded ? 'No face detected — try another photo' : 'Loading face models...'}
-                </span>
-              )}
-            </div>
-          ) : (
-            <div className="flex items-center gap-3 text-muted-foreground">
-              <Camera className="w-8 h-8" />
-              <div>
-                <p className="text-sm font-medium text-foreground">Click to upload a photo</p>
-                <p className="text-xs">Clear front-facing photo works best</p>
-              </div>
-            </div>
-          )}
         </div>
-      </div>
 
-      <div className="flex items-center gap-2">
-        <Checkbox
-          id="consent"
-          checked={consent}
-          onCheckedChange={(checked) => setConsent(checked === true)}
-          disabled={isProcessing}
-        />
-        <Label htmlFor="consent" className="text-sm font-normal cursor-pointer">
-          Parental consent given for face recognition
-        </Label>
-      </div>
+        <div className="space-y-2">
+          <Label htmlFor="class-group">Class Group</Label>
+          <Select onValueChange={setClassGroup} value={classGroup}>
+            <SelectTrigger>
+              <SelectValue placeholder="Select Class" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="Vanda-K2">Vanda-K2</SelectItem>
+              <SelectItem value="Zhong Hua">Zhong Hua</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
 
-      <Button
-        type="submit"
-        className="w-full"
-        disabled={isProcessing || !modelsLoaded || !name.trim() || !classGroup.trim() || !photoFile || !consent}
-      >
-        {isProcessing ? (
-          <>
-            <Loader2 className="w-4 h-4 animate-spin mr-2" />
-            Processing...
-          </>
-        ) : (
-          <>
-            <UserPlus className="w-4 h-4 mr-2" />
-            Register Student
-          </>
-        )}
-      </Button>
+        <div className="space-y-2">
+          <Label>Student Photos (Multiple)</Label>
+          <div
+            onClick={() => fileInputRef.current?.click()}
+            className="border-2 border-dashed border-border rounded-xl p-4 cursor-pointer hover:border-primary/50 transition-colors flex flex-col items-center gap-4"
+          >
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              className="hidden"
+              onChange={handlePhotoSelect}
+              disabled={isProcessing}
+            />
+            
+            {photoPreviews.length > 0 ? (
+              <div className="grid grid-cols-3 gap-2 w-full">
+                {photoPreviews.map((src, i) => (
+                  <img key={i} src={src} className="h-20 w-full object-cover rounded-md border" alt="preview" />
+                ))}
+              </div>
+            ) : (
+              <div className="flex flex-col items-center text-muted-foreground">
+                <CloudUpload className="w-8 h-8 mb-2" />
+                <p className="text-sm font-medium text-foreground">Click to upload photos</p>
+                <p className="text-xs">Front-facing photos work best</p>
+              </div>
+            )}
+          </div>
+        </div>
 
-      {!modelsLoaded && (
-        <p className="text-xs text-muted-foreground text-center flex items-center justify-center gap-1.5">
-          <Loader2 className="w-3 h-3 animate-spin" />
-          Loading face recognition models...
-        </p>
-      )}
-    </form>
+        <div className="flex items-center gap-2 pt-2">
+          <Checkbox
+            id="consent"
+            checked={consent}
+            onCheckedChange={(checked) => setConsent(checked === true)}
+            disabled={isProcessing}
+          />
+          <Label htmlFor="consent" className="text-sm font-normal cursor-pointer">
+            Parental consent given for face recognition
+          </Label>
+        </div>
+
+        <Button
+          type="submit"
+          className="w-full"
+          disabled={isProcessing || !modelsLoaded || !name.trim() || !classGroup || photoFiles.length === 0 || !consent}
+        >
+          {isProcessing ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin mr-2" />
+              Analysing Faces...
+            </>
+          ) : (
+            <>
+              <UserPlus className="w-4 h-4 mr-2" />
+              Register Student
+            </>
+          )}
+        </Button>
+      </form>
+    </div>
   );
 }

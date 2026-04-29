@@ -7,16 +7,14 @@ import { Label } from '@/frontend/components/ui/label';
 import { Badge } from '@/frontend/components/ui/badge';
 import { Progress } from '@/frontend/components/ui/progress';
 import { supabase } from '@/frontend/lib/supabase';
-import { useFaceDetection } from '@/frontend/hooks/useFaceDetection';
+import { useFaceDetection, type YoloDetection } from '@/frontend/hooks/useFaceDetection';
 import { getFaceCanvas } from '@/frontend/lib/faceUtils';
 import { toast } from 'sonner';
 
 type ScanAngle = 'FRONT' | 'LEFT' | 'RIGHT' | 'TOP_DOWN' | 'DEEP_PROFILE' | 'BACK';
 type ScanState = 'IDLE' | ScanAngle | 'DONE';
 
-type FullDetection = faceapi.WithFaceDescriptor<
-  faceapi.WithFaceLandmarks<{ detection: faceapi.FaceDetection }>
->;
+type FullDetection = YoloDetection;
 
 interface CapturedAngle {
   descriptor: number[] | null;
